@@ -1,0 +1,15 @@
+## Build output
+bin/
+obj/
+publish/
+artifacts/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+
+## Local tools / runtime files
+yt-dlp.exe
+*.log

@@ -1,0 +1,292 @@
+<Window x:Class="YoutubeMusicNative.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:app="clr-namespace:YoutubeMusicNative"
+        xmlns:inf="clr-namespace:YoutubeMusicNative.Infrastructure"
+        xmlns:m="clr-namespace:YoutubeMusicNative.Models"
+        xmlns:vm="clr-namespace:YoutubeMusicNative.ViewModels"
+        xmlns:v="clr-namespace:YoutubeMusicNative.Views"
+        Title="YouTube Music Native" Icon="Assets/app.ico"
+        Width="1280" Height="820" MinWidth="420" MinHeight="420"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextPrimaryBrush}"
+        FontFamily="{StaticResource UiFont}" FontSize="14"
+        UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Ideal">
+
+    <Window.Resources>
+        <DataTemplate DataType="{x:Type vm:PageViewModel}">
+            <v:PageView />
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="64" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ================= Top bar ================= -->
+        <Grid Grid.ColumnSpan="2" Background="{StaticResource BgBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.ColumnSpan="3" BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,0,1" />
+
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                <Button Style="{StaticResource IconButton}" Content="&#xE700;" ToolTip="Menu"
+                        Command="{Binding ToggleSidebarCommand}" />
+                <Button Style="{StaticResource IconButton}" Content="&#xE72B;" ToolTip="Back (Alt+Left)" Margin="4,0,0,0"
+                        Command="{Binding BackCommand}"
+                        Visibility="{Binding CanGoBack, Converter={StaticResource BoolToVis}}" />
+                <Button Style="{StaticResource BareButton}" Margin="12,0,0,0" Command="{Binding HomeCommand}" ToolTip="Home">
+                    <StackPanel Orientation="Horizontal">
+                        <Grid Width="26" Height="26">
+                            <Ellipse Fill="#FF0000" />
+                            <Ellipse Width="14" Height="14" Stroke="White" StrokeThickness="1.4" />
+                            <Path Data="M 11,9.5 L 16.5,13 L 11,16.5 Z" Fill="White" />
+                        </Grid>
+                        <TextBlock Text="Music" Margin="6,0,0,1" FontFamily="{StaticResource DisplayFont}" FontSize="20"
+                                   FontWeight="Bold" VerticalAlignment="Center"
+                                   Visibility="{Binding IsNarrow, Converter={StaticResource BoolToVis}, ConverterParameter=invert}" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+
+            <!-- Search -->
+            <Grid Grid.Column="1" x:Name="SearchHost" MaxWidth="480" HorizontalAlignment="Stretch" Margin="24,0,16,0"
+                  VerticalAlignment="Center">
+                <TextBox x:Name="SearchBox" Style="{StaticResource SearchBox}"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         PreviewKeyDown="OnSearchKeyDown" />
+                <Popup x:Name="SuggestPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom"
+                       Width="{Binding ActualWidth, ElementName=SearchBox}" StaysOpen="False" AllowsTransparency="True"
+                       IsOpen="{Binding IsSuggestionsOpen}">
+                    <Border Background="{StaticResource PlayerBgBrush}" CornerRadius="0,0,8,8" Padding="0,6"
+                            BorderBrush="{StaticResource DividerBrush}" BorderThickness="1,0,1,1">
+                        <ListBox x:Name="SuggestList" ItemsSource="{Binding Suggestions}" Background="Transparent"
+                                 BorderThickness="0" Foreground="White" ItemContainerStyle="{StaticResource PlainListBoxItem}"
+                                 PreviewKeyDown="OnSuggestKeyDown">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource BareButton}" Click="OnSuggestionClick" Padding="16,10">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                                                    </Trigger>
+                                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                        <Setter TargetName="bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                                                    </DataTrigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" Margin="0,0,16,0"
+                                                       VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" />
+                                            <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </Popup>
+            </Grid>
+
+            <!-- Account -->
+            <Grid Grid.Column="2" Margin="0,0,20,0" VerticalAlignment="Center">
+                <Button Style="{StaticResource PillOutlineButton}" Content="Sign in" Command="{Binding SignInCommand}"
+                        Visibility="{Binding Auth.IsSignedIn, Converter={StaticResource BoolToVis}, ConverterParameter=invert}" />
+                <Button x:Name="AvatarButton" Style="{StaticResource BareButton}" Click="OnAvatarClick"
+                        ToolTip="{Binding Account.Name}"
+                        Visibility="{Binding Auth.IsSignedIn, Converter={StaticResource BoolToVis}}">
+                    <Grid Width="32" Height="32">
+                        <Ellipse Fill="#7B1FA2" />
+                        <TextBlock Text="&#xE77B;" FontFamily="{StaticResource IconFont}" FontSize="16"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <Border CornerRadius="16" inf:Img.Size="40" inf:Img.Url="{Binding Account.Photo}"
+                                Visibility="{Binding Account.Photo, Converter={StaticResource NullToVis}}" />
+                    </Grid>
+                    <Button.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="{Binding Account.Name}" IsEnabled="False" />
+                            <MenuItem Header="Sign out" Command="{Binding SignOutCommand}" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
+            </Grid>
+        </Grid>
+
+        <!-- ================= Sidebar ================= -->
+        <Border Grid.Row="1" BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,1,0">
+            <Grid>
+                <StackPanel Width="240" Margin="8,12,8,0"
+                            Visibility="{Binding IsSidebarExpanded, Converter={StaticResource BoolToVis}}">
+                    <Button Style="{StaticResource NavButton}" Command="{Binding HomeCommand}"
+                            Tag="{Binding ActiveNav, Converter={StaticResource Equals}, ConverterParameter=home}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE80F;" FontFamily="{StaticResource IconFont}" FontSize="20" VerticalAlignment="Center" />
+                            <TextBlock Text="Home" Margin="20,0,0,0" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButton}" Command="{Binding ExploreCommand}"
+                            Tag="{Binding ActiveNav, Converter={StaticResource Equals}, ConverterParameter=explore}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE909;" FontFamily="{StaticResource IconFont}" FontSize="20" VerticalAlignment="Center" />
+                            <TextBlock Text="Explore" Margin="20,0,0,0" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButton}" Command="{Binding LibraryCommand}"
+                            Tag="{Binding ActiveNav, Converter={StaticResource Equals}, ConverterParameter=library}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8F1;" FontFamily="{StaticResource IconFont}" FontSize="20" VerticalAlignment="Center" />
+                            <TextBlock Text="Library" Margin="20,0,0,0" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Border Height="1" Background="{StaticResource DividerBrush}" Margin="8,16" />
+
+                    <StackPanel Margin="12,0" Visibility="{Binding Auth.IsSignedIn, Converter={StaticResource BoolToVis}, ConverterParameter=invert}">
+                        <TextBlock Text="Sign in to see your playlists, likes and personalised mixes." TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" />
+                        <Button Style="{StaticResource PillOutlineButton}" Content="Sign in" Margin="0,12,0,0"
+                                HorizontalAlignment="Left" Command="{Binding SignInCommand}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Width="72" Margin="0,8,0,0"
+                            Visibility="{Binding IsSidebarExpanded, Converter={StaticResource BoolToVis}, ConverterParameter=invert}">
+                    <Button Style="{StaticResource NavButtonCompact}" Command="{Binding HomeCommand}" Margin="4,0,4,4"
+                            Tag="{Binding ActiveNav, Converter={StaticResource Equals}, ConverterParameter=home}">
+                        <StackPanel>
+                            <TextBlock Text="&#xE80F;" FontFamily="{StaticResource IconFont}" FontSize="20" HorizontalAlignment="Center" />
+                            <TextBlock Text="Home" FontSize="10" Margin="0,6,0,0" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButtonCompact}" Command="{Binding ExploreCommand}" Margin="4,0,4,4"
+                            Tag="{Binding ActiveNav, Converter={StaticResource Equals}, ConverterParameter=explore}">
+                        <StackPanel>
+                            <TextBlock Text="&#xE909;" FontFamily="{StaticResource IconFont}" FontSize="20" HorizontalAlignment="Center" />
+                            <TextBlock Text="Explore" FontSize="10" Margin="0,6,0,0" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButtonCompact}" Command="{Binding LibraryCommand}" Margin="4,0,4,4"
+                            Tag="{Binding ActiveNav, Converter={StaticResource Equals}, ConverterParameter=library}">
+                        <StackPanel>
+                            <TextBlock Text="&#xE8F1;" FontFamily="{StaticResource IconFont}" FontSize="20" HorizontalAlignment="Center" />
+                            <TextBlock Text="Library" FontSize="10" Margin="0,6,0,0" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ================= Content ================= -->
+        <ContentControl Grid.Row="1" Grid.Column="1" Content="{Binding CurrentPage}" Focusable="False" />
+
+        <!-- ================= Up next ================= -->
+        <Border x:Name="QueuePanel" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Right" Width="400"
+                Background="#0F0F0F" BorderBrush="{StaticResource DividerBrush}" BorderThickness="1,0,0,0">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsQueueOpen}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsNarrow}" Value="True">
+                            <Setter Property="Width" Value="Auto" />
+                            <Setter Property="HorizontalAlignment" Value="Stretch" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" Margin="20,16,12,8">
+                    <TextBlock Text="Up next" FontFamily="{StaticResource DisplayFont}" FontSize="18" FontWeight="Bold"
+                               VerticalAlignment="Center" />
+                    <Button Style="{StaticResource IconButton}" Content="&#xE711;" FontSize="14" HorizontalAlignment="Right"
+                            ToolTip="Close" Command="{Binding ToggleQueueCommand}" />
+                </Grid>
+                <TextBlock DockPanel.Dock="Top" Margin="20,24" Text="Nothing queued. Play a song to start a radio."
+                           Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"
+                           Visibility="{Binding Player.HasTrack, Converter={StaticResource BoolToVis}, ConverterParameter=invert}" />
+                <ListBox ItemsSource="{Binding Player.Queue}" Background="Transparent" BorderThickness="0" Padding="8,0,8,8"
+                         ItemContainerStyle="{StaticResource PlainListBoxItem}" Foreground="White"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                         VirtualizingPanel.ScrollUnit="Pixel">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type m:MediaItem}">
+                            <Border x:Name="bd" CornerRadius="4" Background="Transparent">
+                                <Button Style="{StaticResource BareButton}" Padding="8"
+                                        Command="{Binding DataContext.PlayQueueItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                        CommandParameter="{Binding}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Width="40" Height="40">
+                                            <Border CornerRadius="2" inf:Img.Size="60" inf:Img.Url="{Binding Thumbnail}" />
+                                            <Border x:Name="nowPlaying" CornerRadius="2" Background="{StaticResource ShadeBrush}" Visibility="Collapsed">
+                                                <TextBlock Text="&#xE767;" FontFamily="{StaticResource IconFont}" FontSize="16"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                        </Grid>
+                                        <StackPanel Grid.Column="1" Margin="14,0,8,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Subtitle}" Margin="0,2,0,0" FontSize="13" TextTrimming="CharacterEllipsis"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{Binding Duration}" FontSize="13" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                                    </Grid>
+                                </Button>
+                                <Border.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Go to artist" CommandParameter="{Binding}"
+                                                  Command="{Binding Source={x:Static app:App.Vm}, Path=GoToArtistCommand}" />
+                                        <MenuItem Header="Go to album" CommandParameter="{Binding}"
+                                                  Command="{Binding Source={x:Static app:App.Vm}, Path=GoToAlbumCommand}" />
+                                    </ContextMenu>
+                                </Border.ContextMenu>
+                            </Border>
+                            <DataTemplate.Triggers>
+                                <Trigger SourceName="bd" Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                                </Trigger>
+                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="{StaticResource PressedBrush}" />
+                                    <Setter TargetName="nowPlaying" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- ================= Toast ================= -->
+        <Border Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="24,0,24,24"
+                Background="#323232" CornerRadius="6" Padding="16,12" MaxWidth="560"
+                Visibility="{Binding Toast, Converter={StaticResource NullToVis}}">
+            <TextBlock Text="{Binding Toast}" TextWrapping="Wrap" />
+        </Border>
+
+        <!-- ================= Player ================= -->
+        <v:PlayerBar Grid.Row="2" Grid.ColumnSpan="2"
+                     Visibility="{Binding Player.HasTrack, Converter={StaticResource BoolToVis}}" />
+    </Grid>
+</Window>

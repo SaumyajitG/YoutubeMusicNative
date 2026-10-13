@@ -1,0 +1,293 @@
+using System.Collections.ObjectModel;
+using System.Windows;
+using System.Windows.Input;
+using System.Windows.Threading;
+using YoutubeMusicNative.Infrastructure;
+using YoutubeMusicNative.Models;
+using YoutubeMusicNative.Services;
+
+namespace YoutubeMusicNative.ViewModels;
+
+public sealed class MainViewModel : ObservableObject
+{
+    private const int MaxHistory = 30;
+    private readonly List<PageViewModel> _history = [];
+    private PageViewModel? _home;
+    private CancellationTokenSource? _suggestCts;
+    private readonly DispatcherTimer _toastTimer;
+
+    public MainViewModel(Settings settings)
+    {
+        Settings = settings;
+        Auth = new AuthService(settings);
+        Api = new InnerTubeClient(App.Http, Auth);
+        Player = new PlayerService(Api, new StreamResolver(App.Http, Api), App.Http, settings);
+
+        HomeCommand = new RelayCommand(() => NavigateRoot("home"));
+        ExploreCommand = new RelayCommand(() => NavigateRoot("explore"));
+        LibraryCommand = new RelayCommand(() => NavigateRoot("library"));
+        BackCommand = new RelayCommand(_ => GoBack(), _ => CanGoBack);
+        SearchCommand = new RelayCommand(p => Search(p as string ?? SearchText));
+        OpenCommand = new RelayCommand(p => { if (p is MediaItem i) Open(i); });
+        PlayCommand = new RelayCommand(p => { if (p is MediaItem i) Play(i); });
+        PlayNextCommand = new RelayCommand(p => { if (p is MediaItem i) Player.PlayNext(i); }, p => p is MediaItem { VideoId: not null });
+        AddToQueueCommand = new RelayCommand(p => { if (p is MediaItem i) Player.AddToQueue(i); }, p => p is MediaItem { VideoId: not null });
+        GoToArtistCommand = new RelayCommand(p => GoTo(p as MediaItem, artist: true), p => p is MediaItem { ArtistBrowseId: not null });
+        GoToAlbumCommand = new RelayCommand(p => GoTo(p as MediaItem, artist: false), p => p is MediaItem { AlbumBrowseId: not null });
+        SignInCommand = new RelayCommand(SignIn);
+        SignOutCommand = new RelayCommand(SignOut);
+        ToggleQueueCommand = new RelayCommand(() => IsQueueOpen = !IsQueueOpen);
+        ToggleSidebarCommand = new RelayCommand(() => IsSidebarExpanded = !IsSidebarExpanded);
+        TogglePlayCommand = new RelayCommand(Player.TogglePlayPause);
+        NextCommand = new RelayCommand(Player.Next);
+        PreviousCommand = new RelayCommand(Player.Previous);
+        ShuffleCommand = new RelayCommand(Player.ToggleShuffle);
+        RepeatCommand = new RelayCommand(Player.CycleRepeat);
+        MuteCommand = new RelayCommand(() => Player.IsMuted = !Player.IsMuted);
+        PlayQueueItemCommand = new RelayCommand(p => { if (p is MediaItem i) Player.PlayQueueItem(i); });
+
+        _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        _toastTimer.Tick += (_, _) => { _toastTimer.Stop(); Toast = null; };
+        Player.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(PlayerService.Error) && Player.Error is { } err) ShowToast(err);
+        };
+    }
+
+    public Settings Settings { get; }
+    public AuthService Auth { get; }
+    public InnerTubeClient Api { get; }
+    public PlayerService Player { get; }
+
+    // ---------- commands ----------
+
+    public ICommand HomeCommand { get; }
+    public ICommand ExploreCommand { get; }
+    public ICommand LibraryCommand { get; }
+    public ICommand BackCommand { get; }
+    public ICommand SearchCommand { get; }
+    public ICommand OpenCommand { get; }
+    public ICommand PlayCommand { get; }
+    public ICommand PlayNextCommand { get; }
+    public ICommand AddToQueueCommand { get; }
+    public ICommand GoToArtistCommand { get; }
+    public ICommand GoToAlbumCommand { get; }
+    public ICommand SignInCommand { get; }
+    public ICommand SignOutCommand { get; }
+    public ICommand ToggleQueueCommand { get; }
+    public ICommand ToggleSidebarCommand { get; }
+    public ICommand TogglePlayCommand { get; }
+    public ICommand NextCommand { get; }
+    public ICommand PreviousCommand { get; }
+    public ICommand ShuffleCommand { get; }
+    public ICommand RepeatCommand { get; }
+    public ICommand MuteCommand { get; }
+    public ICommand PlayQueueItemCommand { get; }
+
+    // ---------- navigation ----------
+
+    private PageViewModel? _currentPage;
+    public PageViewModel? CurrentPage
+    {
+        get => _currentPage;
+        private set
+        {
+            if (!Set(ref _currentPage, value)) return;
+            if (value is not null) ActiveNav = value.Nav;
+            OnPropertyChanged(nameof(CanGoBack));
+        }
+    }
+
+    public bool CanGoBack => _history.Count > 0;
+
+    private string _activeNav = "home";
+    public string ActiveNav { get => _activeNav; private set => Set(ref _activeNav, value); }
+
+    public void Start()
+    {
+        NavigateRoot("home");
+        if (Auth.IsSignedIn) _ = LoadAccountAsync();
+    }
+
+    private void Navigate(PageViewModel page)
+    {
+        if (CurrentPage is not null)
+        {
+            _history.Add(CurrentPage);
+            if (_history.Count > MaxHistory) _history.RemoveAt(0);
+        }
+        CurrentPage = page;
+        _ = page.LoadAsync();
+    }
+
+    private void NavigateRoot(string nav)
+    {
+        var page = nav switch
+        {
+            "explore" => PageViewModel.Explore(Api),
+            "library" when !Auth.IsSignedIn => PageViewModel.Message(Api, "library", "Library",
+                new MessageRow("Sign in to see your playlists and liked music.", "Sign in", SignInCommand)),
+            "library" => PageViewModel.Library(Api),
+            _ => HomePage(),
+        };
+        if (page == CurrentPage) return;
+        Navigate(page);
+    }
+
+    private PageViewModel HomePage()
+    {
+        // Keep home warm for fast back-and-forth; refresh after 30 minutes.
+        if (_home is null || (_home.LoadedAt != default && DateTime.UtcNow - _home.LoadedAt > TimeSpan.FromMinutes(30)))
+            _home = PageViewModel.Home(Api);
+        return _home;
+    }
+
+    public void GoBack()
+    {
+        if (_history.Count == 0) return;
+        var page = _history[^1];
+        _history.RemoveAt(_history.Count - 1);
+        CurrentPage = page;
+    }
+
+    public void Open(MediaItem item)
+    {
+        if (item.BrowseId is not null && item.VideoId is null)
+        {
+            var nav = item.Kind == ItemKind.Category ? "explore" : ActiveNav;
+            Navigate(PageViewModel.Browse(Api, item, nav));
+        }
+        else
+        {
+            Play(item);
+        }
+    }
+
+    public void Play(MediaItem item)
+    {
+        if (item.VideoId is not null) _ = Player.PlayRadioAsync(item);
+        else if (item.PlaylistId is not null) _ = Player.PlayPlaylistAsync(item.PlaylistId);
+        else if (item.BrowseId is not null) Open(item);
+    }
+
+    private void GoTo(MediaItem? item, bool artist)
+    {
+        if (item is null) return;
+        var id = artist ? item.ArtistBrowseId : item.AlbumBrowseId;
+        if (id is null) return;
+        Navigate(PageViewModel.Browse(Api, new MediaItem
+        {
+            Title = (artist ? item.ArtistName : item.AlbumName) ?? "",
+            BrowseId = id,
+            Kind = artist ? ItemKind.Artist : ItemKind.Album,
+        }, ActiveNav));
+    }
+
+    // ---------- search ----------
+
+    private string _searchText = "";
+    public string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            if (Set(ref _searchText, value)) _ = UpdateSuggestionsAsync(value);
+        }
+    }
+
+    public ObservableCollection<string> Suggestions { get; } = [];
+
+    private bool _isSuggestionsOpen;
+    public bool IsSuggestionsOpen { get => _isSuggestionsOpen; set => Set(ref _isSuggestionsOpen, value); }
+
+    public void Search(string? query)
+    {
+        query = query?.Trim();
+        if (string.IsNullOrEmpty(query)) return;
+        _suggestCts?.Cancel();
+        IsSuggestionsOpen = false;
+        if (_searchText != query) { _searchText = query; OnPropertyChanged(nameof(SearchText)); }
+        Navigate(PageViewModel.Search(Api, query));
+    }
+
+    private async Task UpdateSuggestionsAsync(string text)
+    {
+        _suggestCts?.Cancel();
+        var cts = _suggestCts = new CancellationTokenSource();
+        if (string.IsNullOrWhiteSpace(text)) { IsSuggestionsOpen = false; return; }
+        try
+        {
+            await Task.Delay(180, cts.Token);
+            var list = await Api.GetSuggestionsAsync(text, cts.Token);
+            if (cts.IsCancellationRequested) return;
+            Suggestions.Clear();
+            foreach (var s in list.Take(8)) Suggestions.Add(s);
+            IsSuggestionsOpen = Suggestions.Count > 0;
+        }
+        catch
+        {
+            // Suggestions are optional.
+        }
+    }
+
+    // ---------- account ----------
+
+    private AccountInfo? _account;
+    public AccountInfo? Account { get => _account; private set => Set(ref _account, value); }
+
+    private async Task LoadAccountAsync()
+    {
+        try { Account = await Api.GetAccountAsync(); }
+        catch (Exception ex) { ShowToast("Couldn't load your account: " + ex.Message); }
+    }
+
+    private void SignIn()
+    {
+        var dialog = new Views.LoginWindow(Auth) { Owner = Application.Current.MainWindow };
+        if (dialog.ShowDialog() != true) return;
+        _home = null;
+        _history.Clear();
+        CurrentPage = null;
+        NavigateRoot("home");
+        _ = LoadAccountAsync();
+        ShowToast("Signed in");
+    }
+
+    private void SignOut()
+    {
+        Auth.SignOut();
+        Account = null;
+        _home = null;
+        _history.Clear();
+        CurrentPage = null;
+        NavigateRoot("home");
+        ShowToast("Signed out");
+    }
+
+    // ---------- layout state (driven by MainWindow size) ----------
+
+    private bool _isSidebarExpanded = true;
+    public bool IsSidebarExpanded { get => _isSidebarExpanded; set => Set(ref _isSidebarExpanded, value); }
+
+    private bool _isNarrow;
+    /// <summary>Phone-like widths: hide secondary controls.</summary>
+    public bool IsNarrow { get => _isNarrow; set => Set(ref _isNarrow, value); }
+
+    private bool _isQueueOpen;
+    public bool IsQueueOpen { get => _isQueueOpen; set => Set(ref _isQueueOpen, value); }
+
+    private Thickness _contentMargin = new(32, 0, 32, 0);
+    public Thickness ContentMargin { get => _contentMargin; set => Set(ref _contentMargin, value); }
+
+    // ---------- toast ----------
+
+    private string? _toast;
+    public string? Toast { get => _toast; private set => Set(ref _toast, value); }
+
+    public void ShowToast(string message)
+    {
+        Toast = message;
+        _toastTimer.Stop();
+        _toastTimer.Start();
+    }
+}
