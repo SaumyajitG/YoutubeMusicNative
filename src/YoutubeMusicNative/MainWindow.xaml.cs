@@ -24,6 +24,12 @@ public partial class MainWindow : Window
             {
                 if (e.PropertyName == nameof(MainViewModel.IsSidebarExpanded)) UpdateLayoutState();
             };
+            Views.TaskbarButtons.Attach(this, Vm);
+        };
+        // Music keeps playing while minimized; hand the UI's memory back to Windows meanwhile.
+        StateChanged += (_, _) =>
+        {
+            if (WindowState == WindowState.Minimized) MemoryTrim.TrimWorkingSet();
         };
         Closing += (_, _) => SavePlacement();
         PreviewKeyDown += OnWindowKeyDown;

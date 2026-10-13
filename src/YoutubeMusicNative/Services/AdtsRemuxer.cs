@@ -11,7 +11,7 @@ namespace YoutubeMusicNative.Services;
 internal static class AdtsRemuxer
 {
     /// <summary>Returns null if the data isn't fragmented MP4 audio.</summary>
-    public static byte[]? Remux(byte[] mp4)
+    public static ArraySegment<byte>? Remux(byte[] mp4)
     {
         int objectType = 2, freqIndex = 4, channels = 2; // AAC-LC, 44.1 kHz, stereo unless esds says otherwise
         var esds = IndexOf(mp4, "esds"u8, 0, mp4.Length);
@@ -22,7 +22,8 @@ internal static class AdtsRemuxer
             channels = (mp4[asc + 1] >> 3) & 0xF;
         }
 
-        using var output = new MemoryStream(mp4.Length + mp4.Length / 100);
+        // ADTS adds 7 bytes per AAC frame (~2% at 128 kbps, ~5% at 48 kbps); size up front to avoid regrowth.
+        using var output = new MemoryStream(mp4.Length + mp4.Length / 16);
         var pos = 0;
         while (pos + 8 <= mp4.Length)
         {
@@ -32,7 +33,8 @@ internal static class AdtsRemuxer
                 WriteFragment(mp4, pos, size, output, objectType, freqIndex, channels);
             pos += size;
         }
-        return output.Length > 0 ? output.ToArray() : null;
+        if (output.Length == 0 || !output.TryGetBuffer(out var buffer)) return null;
+        return buffer;
     }
 
     private static void WriteFragment(byte[] d, int moof, int moofSize, MemoryStream output, int objectType, int freqIndex, int channels)

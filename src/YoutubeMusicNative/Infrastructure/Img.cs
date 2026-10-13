@@ -26,7 +26,8 @@ public static class Img
     public static int GetSize(DependencyObject d) => (int)d.GetValue(SizeProperty);
     public static void SetSize(DependencyObject d, int value) => d.SetValue(SizeProperty, value);
 
-    private static readonly LruCache<string, ImageBrush> Cache = new(400);
+    // ~250 KB per decoded cover; on-screen images stay alive through the UI regardless.
+    private static readonly LruCache<string, ImageBrush> Cache = new(120);
     private static readonly ConcurrentDictionary<string, Task<ImageBrush?>> InFlight = new();
     private static readonly SemaphoreSlim Gate = new(8);
     private static readonly Brush Placeholder = CreatePlaceholder();

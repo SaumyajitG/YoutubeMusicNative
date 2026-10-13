@@ -29,9 +29,13 @@ public sealed class PlayerService : ObservableObject, IDisposable
     private readonly Dispatcher _ui = Application.Current.Dispatcher;
     private readonly DispatcherTimer _timer;
 
+    private sealed record PreparedAudio(ArraySegment<byte> Data, string Mime);
+
     private int _playToken;
     private int _queueGeneration;
     private DateTime _startedAt;
+    private (string VideoId, Task<PreparedAudio> Audio)? _next;
+    private bool _prepareQueued;
     private Continuation? _queueContinuation;
     private string? _queuePlaylistId;
     private bool _extendingQueue;
@@ -57,6 +61,7 @@ public sealed class PlayerService : ObservableObject, IDisposable
         _mp.PlaybackSession.PlaybackStateChanged += (_, _) => _ui.InvokeAsync(UpdateState);
 
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => Tick(), _ui);
+        Queue.CollectionChanged += (_, _) => QueuePrepareNext();
     }
 
     // ---------- state ----------
@@ -147,7 +152,6 @@ public sealed class PlayerService : ObservableObject, IDisposable
             foreach (var item in q.Items.Where(i => i.VideoId != seed.VideoId)) Queue.Add(item);
             _queueContinuation = q.Next;
             _queuePlaylistId = q.PlaylistId;
-            Prefetch();
         }
         catch
         {
@@ -216,6 +220,9 @@ public sealed class PlayerService : ObservableObject, IDisposable
         if (item.VideoId is null) return;
         if (Current is null) { PlayList([item], 0); return; }
         Queue.Add(item.Clone());
+        // Look up the stream now so the song is ready by the time it comes up.
+        // (If it's the very next song, the queue watcher also downloads it.)
+        _ = _resolver.ResolveAsync(item.VideoId).ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     // ---------- transport ----------
@@ -271,12 +278,16 @@ public sealed class PlayerService : ObservableObject, IDisposable
         for (var i = 0; i < tail.Count; i++) Queue[CurrentIndex + 1 + i] = tail[i];
     }
 
-    public void CycleRepeat() => Repeat = Repeat switch
+    public void CycleRepeat()
     {
-        RepeatMode.Off => RepeatMode.All,
-        RepeatMode.All => RepeatMode.One,
-        _ => RepeatMode.Off,
-    };
+        Repeat = Repeat switch
+        {
+            RepeatMode.Off => RepeatMode.All,
+            RepeatMode.All => RepeatMode.One,
+            _ => RepeatMode.Off,
+        };
+        QueuePrepareNext();
+    }
 
     // ---------- internals ----------
 
@@ -292,26 +303,21 @@ public sealed class PlayerService : ObservableObject, IDisposable
         Duration = ParseDuration(item.Duration);
         _mp.Source = null;
 
+        // Use the copy prepared while the previous song played, if there is one.
+        var prepared = _next is { } n && n.VideoId == item.VideoId && !n.Audio.IsFaulted ? n.Audio : null;
+        if (_next?.VideoId == item.VideoId) _next = null;
+
         try
         {
-            var info = await _resolver.ResolveAsync(item.VideoId);
+            var audio = await (prepared ?? LoadAudioAsync(item.VideoId));
             if (token != _playToken) return;
-            // googlevideo rejects Media Foundation's own range requests, so fetch the (~3-5 MB)
-            // audio ourselves in &range= chunks and play it from memory.
-            var data = await DownloadAsync(info);
-            if (token != _playToken) return;
-            var mime = info.MimeType;
-            if (mime == "audio/mp4" && AdtsRemuxer.Remux(data) is { } adts)
-            {
-                data = adts;
-                mime = "audio/aac";
-            }
-            var stream = new MemoryStream(data).AsRandomAccessStream();
-            _mp.Source = BuildPlaybackItem(MediaSource.CreateFromStream(stream, mime), item);
+            var stream = new MemoryStream(audio.Data.Array!, audio.Data.Offset, audio.Data.Count, writable: false).AsRandomAccessStream();
+            _mp.Source = BuildPlaybackItem(MediaSource.CreateFromStream(stream, audio.Mime), item);
             _mp.Play();
             _startedAt = DateTime.UtcNow;
-            Prefetch();
+            PrepareNext();
             _ = ExtendQueueIfNeededAsync();
+            ReleaseOldBuffers();
         }
         catch (Exception ex)
         {
@@ -322,31 +328,86 @@ public sealed class PlayerService : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Resolves, downloads and remuxes a song so it can start instantly.</summary>
+    private async Task<PreparedAudio> LoadAudioAsync(string videoId)
+    {
+        var info = await _resolver.ResolveAsync(videoId).ConfigureAwait(false);
+        // googlevideo rejects Media Foundation's own range requests, so fetch the (~3-5 MB)
+        // audio ourselves in &range= chunks and play it from memory.
+        var data = await DownloadAsync(info).ConfigureAwait(false);
+        if (info.MimeType == "audio/mp4" && AdtsRemuxer.Remux(data) is { } adts) return new PreparedAudio(adts, "audio/aac");
+        return new PreparedAudio(data, info.MimeType);
+    }
+
     private async Task<byte[]> DownloadAsync(StreamInfo info)
     {
-        const long chunk = 1024 * 1024;
-        using var buffer = new MemoryStream();
+        const int chunk = 1024 * 1024;
         if (info.ContentLength is not { } length)
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, info.Url);
             req.Headers.TryAddWithoutValidation("User-Agent", info.UserAgent);
-            using var resp = await _http.SendAsync(req);
+            using var resp = await _http.SendAsync(req).ConfigureAwait(false);
             resp.EnsureSuccessStatusCode();
-            await resp.Content.CopyToAsync(buffer);
-            return buffer.ToArray();
+            return await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
         }
 
-        for (long start = 0; start < length; start += chunk)
+        // One exact-size buffer instead of a growing MemoryStream plus a copy.
+        var data = GC.AllocateUninitializedArray<byte>((int)length);
+        for (var start = 0; start < data.Length; start += chunk)
         {
-            var end = Math.Min(start + chunk, length) - 1;
-            using var req = new HttpRequestMessage(HttpMethod.Get, $"{info.Url}&range={start}-{end}");
+            var count = Math.Min(chunk, data.Length - start);
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{info.Url}&range={start}-{start + count - 1}");
             req.Headers.TryAddWithoutValidation("User-Agent", info.UserAgent);
-            using var resp = await _http.SendAsync(req);
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
             resp.EnsureSuccessStatusCode();
-            await resp.Content.CopyToAsync(buffer);
+            await using var body = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            await body.ReadExactlyAsync(data.AsMemory(start, count)).ConfigureAwait(false);
         }
-        return buffer.ToArray();
+        return data;
     }
+
+    private MediaItem? UpcomingItem()
+    {
+        if (Repeat == RepeatMode.One || Queue.Count == 0) return null;
+        if (CurrentIndex + 1 < Queue.Count) return Queue[CurrentIndex + 1];
+        return Repeat == RepeatMode.All ? Queue[0] : null;
+    }
+
+    /// <summary>Queue edits arrive in bursts (e.g. a whole radio); re-check the upcoming song once.</summary>
+    private void QueuePrepareNext()
+    {
+        if (_prepareQueued) return;
+        _prepareQueued = true;
+        _ui.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            _prepareQueued = false;
+            PrepareNext();
+        });
+    }
+
+    /// <summary>Keeps exactly one upcoming song downloaded and ready; drops it if the queue changed.</summary>
+    private void PrepareNext()
+    {
+        if (Current is null) return;
+        var id = UpcomingItem()?.VideoId;
+        if (id is null || id == Current.VideoId) { _next = null; return; }
+        if (_next is { } n && n.VideoId == id && !n.Audio.IsFaulted) return;
+
+        var task = LoadAudioAsync(id);
+        _ = task.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+        _next = (id, task);
+    }
+
+    /// <summary>
+    /// Track buffers are a few MB each and land on the large object heap, which .NET
+    /// doesn't compact by default. Compact once per track so memory doesn't creep up.
+    /// </summary>
+    private void ReleaseOldBuffers() =>
+        _ui.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
+        {
+            System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect();
+        });
 
     private static MediaPlaybackItem BuildPlaybackItem(MediaSource source, MediaItem item)
     {
@@ -399,12 +460,6 @@ public sealed class PlayerService : ObservableObject, IDisposable
         var session = _mp.PlaybackSession;
         if (session.NaturalDuration > TimeSpan.Zero) Duration = session.NaturalDuration.TotalSeconds;
         if (!IsSeeking) Position = session.Position.TotalSeconds;
-    }
-
-    private void Prefetch()
-    {
-        if (CurrentIndex + 1 < Queue.Count && Queue[CurrentIndex + 1].VideoId is { } next)
-            _ = _resolver.ResolveAsync(next).ContinueWith(_ => { }, TaskScheduler.Default);
     }
 
     /// <summary>Keeps radio/autoplay going by loading more of the queue as it runs out.</summary>
