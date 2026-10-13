@@ -13,3 +13,6 @@ artifacts/
 ## Local tools / runtime files
 yt-dlp.exe
 *.log
+
+## Local copy of the published exe (distributed via GitHub Releases)
+Executable/

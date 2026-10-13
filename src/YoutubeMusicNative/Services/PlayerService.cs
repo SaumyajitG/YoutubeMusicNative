@@ -31,6 +31,7 @@ public sealed class PlayerService : ObservableObject, IDisposable
 
     private int _playToken;
     private int _queueGeneration;
+    private DateTime _startedAt;
     private Continuation? _queueContinuation;
     private string? _queuePlaylistId;
     private bool _extendingQueue;
@@ -299,9 +300,16 @@ public sealed class PlayerService : ObservableObject, IDisposable
             // audio ourselves in &range= chunks and play it from memory.
             var data = await DownloadAsync(info);
             if (token != _playToken) return;
+            var mime = info.MimeType;
+            if (mime == "audio/mp4" && AdtsRemuxer.Remux(data) is { } adts)
+            {
+                data = adts;
+                mime = "audio/aac";
+            }
             var stream = new MemoryStream(data).AsRandomAccessStream();
-            _mp.Source = BuildPlaybackItem(MediaSource.CreateFromStream(stream, info.MimeType), item);
+            _mp.Source = BuildPlaybackItem(MediaSource.CreateFromStream(stream, mime), item);
             _mp.Play();
+            _startedAt = DateTime.UtcNow;
             Prefetch();
             _ = ExtendQueueIfNeededAsync();
         }
@@ -362,6 +370,16 @@ public sealed class PlayerService : ObservableObject, IDisposable
 
     private void OnEnded()
     {
+        // YouTube sometimes serves a valid-looking file with no playable audio; the player then
+        // "ends" instantly. Report it instead of skipping through the whole queue.
+        if (DateTime.UtcNow - _startedAt < TimeSpan.FromSeconds(5))
+        {
+            if (Current?.VideoId is { } id) _resolver.Invalidate(id);
+            IsPlaying = false;
+            _timer.Stop();
+            Error = "YouTube refused to stream this song. Try again later, or sign in.";
+            return;
+        }
         if (Repeat == RepeatMode.One) { Seek(0); _mp.Play(); return; }
         if (CurrentIndex + 1 < Queue.Count || Repeat == RepeatMode.All) Next();
         else { IsPlaying = false; _timer.Stop(); }
