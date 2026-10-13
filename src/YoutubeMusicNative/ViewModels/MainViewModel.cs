@@ -12,6 +12,7 @@ public sealed class MainViewModel : ObservableObject
 {
     private const int MaxHistory = 30;
     private readonly List<PageViewModel> _history = [];
+    private readonly StreamResolver _resolver;
     private PageViewModel? _home;
     private CancellationTokenSource? _suggestCts;
     private readonly DispatcherTimer _toastTimer;
@@ -21,7 +22,9 @@ public sealed class MainViewModel : ObservableObject
         Settings = settings;
         Auth = new AuthService(settings);
         Api = new InnerTubeClient(App.Http, Auth);
-        Player = new PlayerService(Api, new StreamResolver(App.Http, Api), App.Http, settings);
+        _resolver = new StreamResolver(App.Http, Api, Auth, settings);
+        Player = new PlayerService(Api, _resolver, App.Http, settings);
+        OpenSettingsCommand = new RelayCommand(OpenSettings);
 
         HomeCommand = new RelayCommand(() => NavigateRoot("home"));
         ExploreCommand = new RelayCommand(() => NavigateRoot("explore"));
@@ -45,6 +48,7 @@ public sealed class MainViewModel : ObservableObject
         RepeatCommand = new RelayCommand(Player.CycleRepeat);
         MuteCommand = new RelayCommand(() => Player.IsMuted = !Player.IsMuted);
         PlayQueueItemCommand = new RelayCommand(p => { if (p is MediaItem i) Player.PlayQueueItem(i); });
+        RemoveFromQueueCommand = new RelayCommand(p => { if (p is MediaItem i) Player.Remove(i); });
 
         _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
         _toastTimer.Tick += (_, _) => { _toastTimer.Stop(); Toast = null; };
@@ -83,6 +87,39 @@ public sealed class MainViewModel : ObservableObject
     public ICommand RepeatCommand { get; }
     public ICommand MuteCommand { get; }
     public ICommand PlayQueueItemCommand { get; }
+    public ICommand RemoveFromQueueCommand { get; }
+    public ICommand OpenSettingsCommand { get; }
+
+    // ---------- settings ----------
+
+    public bool IsDarkMode
+    {
+        get => Settings.DarkMode;
+        set
+        {
+            if (Settings.DarkMode == value) return;
+            Settings.DarkMode = value;
+            Settings.Save();
+            WindowTheming.SetTheme(value);
+            OnPropertyChanged();
+        }
+    }
+
+    public bool UseAccountForPlayback
+    {
+        get => Settings.UseAccountForPlayback;
+        set
+        {
+            if (Settings.UseAccountForPlayback == value) return;
+            Settings.UseAccountForPlayback = value;
+            Settings.Save();
+            _resolver.Clear(); // stream links depend on how they were fetched
+            OnPropertyChanged();
+        }
+    }
+
+    private void OpenSettings() =>
+        new Views.SettingsWindow { Owner = Application.Current.MainWindow, DataContext = this }.ShowDialog();
 
     // ---------- navigation ----------
 
@@ -245,6 +282,7 @@ public sealed class MainViewModel : ObservableObject
     {
         var dialog = new Views.LoginWindow(Auth) { Owner = Application.Current.MainWindow };
         if (dialog.ShowDialog() != true) return;
+        _resolver.Clear();
         _home = null;
         _history.Clear();
         CurrentPage = null;
@@ -256,6 +294,7 @@ public sealed class MainViewModel : ObservableObject
     private void SignOut()
     {
         Auth.SignOut();
+        _resolver.Clear();
         Account = null;
         _home = null;
         _history.Clear();

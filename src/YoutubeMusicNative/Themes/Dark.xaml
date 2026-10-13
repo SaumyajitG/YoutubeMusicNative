@@ -1,0 +1,28 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- YouTube Music dark palette. Light.xaml defines the same keys. -->
+    <Color x:Key="BgColor">#030303</Color>
+    <SolidColorBrush x:Key="BgBrush" Color="#030303" />
+    <SolidColorBrush x:Key="PlayerBgBrush" Color="#212121" />
+    <SolidColorBrush x:Key="PopupBgBrush" Color="#282828" />
+    <SolidColorBrush x:Key="PanelBgBrush" Color="#0F0F0F" />
+    <SolidColorBrush x:Key="HoverBrush" Color="#1AFFFFFF" />
+    <SolidColorBrush x:Key="PressedBrush" Color="#33FFFFFF" />
+    <SolidColorBrush x:Key="DividerBrush" Color="#1AFFFFFF" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#B3FFFFFF" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#80FFFFFF" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#FF0033" />
+    <SolidColorBrush x:Key="ShadeBrush" Color="#80000000" />
+    <SolidColorBrush x:Key="PillBgBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PillFgBrush" Color="#000000" />
+    <SolidColorBrush x:Key="RailBrush" Color="#33FFFFFF" />
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#40FFFFFF" />
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#80FFFFFF" />
+    <SolidColorBrush x:Key="SearchFocusBrush" Color="#212121" />
+    <SolidColorBrush x:Key="PlaceholderBrush" Color="#242424" />
+    <LinearGradientBrush x:Key="ArtistFadeBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#00030303" Offset="0.25" />
+        <GradientStop Color="#F2030303" Offset="1" />
+    </LinearGradientBrush>
+</ResourceDictionary>

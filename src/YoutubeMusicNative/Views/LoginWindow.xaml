@@ -4,10 +4,10 @@
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="Sign in to YouTube Music" Width="560" Height="720" MinWidth="400" MinHeight="500"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
-        Background="{StaticResource PlayerBgBrush}" Foreground="{StaticResource TextPrimaryBrush}"
+        Background="{DynamicResource PlayerBgBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
         FontFamily="{StaticResource UiFont}" FontSize="14">
     <DockPanel>
-        <TextBlock DockPanel.Dock="Top" Margin="16,12" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"
+        <TextBlock DockPanel.Dock="Top" Margin="16,12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
                    Text="Sign in with your Google account. This window closes by itself once you're signed in." />
         <TextBlock x:Name="ErrorText" DockPanel.Dock="Top" Margin="16,0,16,12" TextWrapping="Wrap" Foreground="#FF6B6B"
                    Visibility="Collapsed" />

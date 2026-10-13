@@ -40,6 +40,7 @@ public partial class App : Application
         };
 
         var settings = Settings.Load();
+        if (!settings.DarkMode) Infrastructure.WindowTheming.SetTheme(dark: false);
         Vm = new MainViewModel(settings);
         var window = new MainWindow { DataContext = Vm };
         MainWindow = window;

@@ -21,7 +21,7 @@ public partial class LoginWindow : Window
     public LoginWindow(AuthService auth)
     {
         InitializeComponent();
-        WindowTheming.ApplyDark(this);
+        WindowTheming.Attach(this);
         _auth = auth;
         Loaded += async (_, _) => await StartAsync();
     }

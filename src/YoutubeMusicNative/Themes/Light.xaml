@@ -1,0 +1,28 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Light palette (same keys as Dark.xaml). -->
+    <Color x:Key="BgColor">#FFFFFF</Color>
+    <SolidColorBrush x:Key="BgBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PlayerBgBrush" Color="#F2F2F2" />
+    <SolidColorBrush x:Key="PopupBgBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PanelBgBrush" Color="#F7F7F7" />
+    <SolidColorBrush x:Key="HoverBrush" Color="#0F000000" />
+    <SolidColorBrush x:Key="PressedBrush" Color="#1F000000" />
+    <SolidColorBrush x:Key="DividerBrush" Color="#1A000000" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#0F0F0F" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#606060" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#909090" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#FF0033" />
+    <SolidColorBrush x:Key="ShadeBrush" Color="#80000000" />
+    <SolidColorBrush x:Key="PillBgBrush" Color="#0F0F0F" />
+    <SolidColorBrush x:Key="PillFgBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="RailBrush" Color="#26000000" />
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#33000000" />
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#66000000" />
+    <SolidColorBrush x:Key="SearchFocusBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PlaceholderBrush" Color="#E5E5E5" />
+    <LinearGradientBrush x:Key="ArtistFadeBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#00FFFFFF" Offset="0.25" />
+        <GradientStop Color="#F2FFFFFF" Offset="1" />
+    </LinearGradientBrush>
+</ResourceDictionary>

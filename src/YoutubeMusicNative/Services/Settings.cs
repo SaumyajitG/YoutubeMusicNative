@@ -18,6 +18,9 @@ public sealed class Settings
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public double Volume { get; set; } = 70;
+    public bool DarkMode { get; set; } = true;
+    /// <summary>When signed in, fetch songs with the user's account (via yt-dlp + session cookies).</summary>
+    public bool UseAccountForPlayback { get; set; } = true;
     public double WindowWidth { get; set; } = 1280;
     public double WindowHeight { get; set; } = 820;
     public bool WindowMaximized { get; set; }

@@ -20,6 +20,9 @@ public sealed class AuthService(Settings settings) : ObservableObject
 
     public bool IsSignedIn => settings.Secret.Cookie is not null;
 
+    /// <summary>The signed-in session's cookies (Cookie header form), or null when signed out.</summary>
+    public string? SessionCookie => settings.Secret.Cookie;
+
     public Task ApplyAsync(HttpRequestMessage request, CancellationToken ct)
     {
         if (settings.Secret.Cookie is { } cookie)

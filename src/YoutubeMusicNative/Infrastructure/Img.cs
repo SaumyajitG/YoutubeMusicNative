@@ -30,14 +30,6 @@ public static class Img
     private static readonly LruCache<string, ImageBrush> Cache = new(120);
     private static readonly ConcurrentDictionary<string, Task<ImageBrush?>> InFlight = new();
     private static readonly SemaphoreSlim Gate = new(8);
-    private static readonly Brush Placeholder = CreatePlaceholder();
-
-    private static Brush CreatePlaceholder()
-    {
-        var b = new SolidColorBrush(Color.FromRgb(0x24, 0x24, 0x24));
-        b.Freeze();
-        return b;
-    }
 
     private static async void OnUrlChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -45,7 +37,7 @@ public static class Img
         var url = e.NewValue as string;
         if (string.IsNullOrEmpty(url))
         {
-            border.Background = Placeholder;
+            border.SetResourceReference(Border.BackgroundProperty, "PlaceholderBrush");
             return;
         }
 
@@ -60,7 +52,7 @@ public static class Img
             return;
         }
 
-        border.Background = Placeholder;
+        border.SetResourceReference(Border.BackgroundProperty, "PlaceholderBrush");
         var brush = await InFlight.GetOrAdd(key, _ => LoadAsync(resolved, px, key));
         if (brush is not null && GetUrl(border) == url) border.Background = brush;
     }

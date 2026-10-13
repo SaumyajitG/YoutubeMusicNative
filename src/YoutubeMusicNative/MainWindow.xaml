@@ -8,7 +8,7 @@
         xmlns:v="clr-namespace:YoutubeMusicNative.Views"
         Title="YouTube Music Native" Icon="Assets/app.ico"
         Width="1280" Height="820" MinWidth="420" MinHeight="420"
-        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextPrimaryBrush}"
+        Background="{DynamicResource BgBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
         FontFamily="{StaticResource UiFont}" FontSize="14"
         UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Ideal">
 
@@ -30,13 +30,13 @@
         </Grid.ColumnDefinitions>
 
         <!-- ================= Top bar ================= -->
-        <Grid Grid.ColumnSpan="2" Background="{StaticResource BgBrush}">
+        <Grid Grid.ColumnSpan="2" Background="{DynamicResource BgBrush}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <Border Grid.ColumnSpan="3" BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,0,1" />
+            <Border Grid.ColumnSpan="3" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,0,1" />
 
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
                 <Button Style="{StaticResource IconButton}" Content="&#xE700;" ToolTip="Menu"
@@ -67,10 +67,10 @@
                 <Popup x:Name="SuggestPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom"
                        Width="{Binding ActualWidth, ElementName=SearchBox}" StaysOpen="False" AllowsTransparency="True"
                        IsOpen="{Binding IsSuggestionsOpen}">
-                    <Border Background="{StaticResource PlayerBgBrush}" CornerRadius="0,0,8,8" Padding="0,6"
-                            BorderBrush="{StaticResource DividerBrush}" BorderThickness="1,0,1,1">
+                    <Border Background="{DynamicResource PlayerBgBrush}" CornerRadius="0,0,8,8" Padding="0,6"
+                            BorderBrush="{DynamicResource DividerBrush}" BorderThickness="1,0,1,1">
                         <ListBox x:Name="SuggestList" ItemsSource="{Binding Suggestions}" Background="Transparent"
-                                 BorderThickness="0" Foreground="White" ItemContainerStyle="{StaticResource PlainListBoxItem}"
+                                 BorderThickness="0" Foreground="{DynamicResource TextPrimaryBrush}" ItemContainerStyle="{StaticResource PlainListBoxItem}"
                                  PreviewKeyDown="OnSuggestKeyDown">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
@@ -82,17 +82,17 @@
                                                 </Border>
                                                 <ControlTemplate.Triggers>
                                                     <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                                                        <Setter TargetName="bd" Property="Background" Value="{DynamicResource HoverBrush}" />
                                                     </Trigger>
                                                     <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
-                                                        <Setter TargetName="bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                                                        <Setter TargetName="bd" Property="Background" Value="{DynamicResource HoverBrush}" />
                                                     </DataTrigger>
                                                 </ControlTemplate.Triggers>
                                             </ControlTemplate>
                                         </Button.Template>
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" Margin="0,0,16,0"
-                                                       VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" />
+                                                       VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" />
                                             <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
                                     </Button>
@@ -103,8 +103,11 @@
                 </Popup>
             </Grid>
 
-            <!-- Account -->
-            <Grid Grid.Column="2" Margin="0,0,20,0" VerticalAlignment="Center">
+            <!-- Settings + account -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,20,0" VerticalAlignment="Center">
+            <Button Style="{StaticResource IconButton}" Content="&#xE713;" ToolTip="Settings" Margin="0,0,8,0"
+                    Command="{Binding OpenSettingsCommand}" />
+            <Grid VerticalAlignment="Center">
                 <Button Style="{StaticResource PillOutlineButton}" Content="Sign in" Command="{Binding SignInCommand}"
                         Visibility="{Binding Auth.IsSignedIn, Converter={StaticResource BoolToVis}, ConverterParameter=invert}" />
                 <Button x:Name="AvatarButton" Style="{StaticResource BareButton}" Click="OnAvatarClick"
@@ -125,10 +128,11 @@
                     </Button.ContextMenu>
                 </Button>
             </Grid>
+            </StackPanel>
         </Grid>
 
         <!-- ================= Sidebar ================= -->
-        <Border Grid.Row="1" BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,0,1,0">
+        <Border Grid.Row="1" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,1,0">
             <Grid>
                 <StackPanel Width="240" Margin="8,12,8,0"
                             Visibility="{Binding IsSidebarExpanded, Converter={StaticResource BoolToVis}}">
@@ -154,11 +158,11 @@
                         </StackPanel>
                     </Button>
 
-                    <Border Height="1" Background="{StaticResource DividerBrush}" Margin="8,16" />
+                    <Border Height="1" Background="{DynamicResource DividerBrush}" Margin="8,16" />
 
                     <StackPanel Margin="12,0" Visibility="{Binding Auth.IsSignedIn, Converter={StaticResource BoolToVis}, ConverterParameter=invert}">
                         <TextBlock Text="Sign in to see your playlists, likes and personalised mixes." TextWrapping="Wrap"
-                                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="13" />
+                                   Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13" />
                         <Button Style="{StaticResource PillOutlineButton}" Content="Sign in" Margin="0,12,0,0"
                                 HorizontalAlignment="Left" Command="{Binding SignInCommand}" />
                     </StackPanel>
@@ -196,7 +200,7 @@
 
         <!-- ================= Up next ================= -->
         <Border x:Name="QueuePanel" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Right" Width="400"
-                Background="#0F0F0F" BorderBrush="{StaticResource DividerBrush}" BorderThickness="1,0,0,0">
+                Background="{DynamicResource PanelBgBrush}" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="1,0,0,0">
             <Border.Style>
                 <Style TargetType="Border">
                     <Setter Property="Visibility" Value="Collapsed" />
@@ -219,17 +223,31 @@
                             ToolTip="Close" Command="{Binding ToggleQueueCommand}" />
                 </Grid>
                 <TextBlock DockPanel.Dock="Top" Margin="20,24" Text="Nothing queued. Play a song to start a radio."
-                           Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"
                            Visibility="{Binding Player.HasTrack, Converter={StaticResource BoolToVis}, ConverterParameter=invert}" />
-                <ListBox ItemsSource="{Binding Player.Queue}" Background="Transparent" BorderThickness="0" Padding="8,0,8,8"
-                         ItemContainerStyle="{StaticResource PlainListBoxItem}" Foreground="White"
+                <ListBox x:Name="QueueList" ItemsSource="{Binding Player.Queue}" Background="Transparent" BorderThickness="0" Padding="8,0,8,8"
+                         AllowDrop="True" DragOver="OnQueueDragOver" Drop="OnQueueDrop" DragLeave="OnQueueDragLeave"
+                         ItemContainerStyle="{StaticResource PlainListBoxItem}" Foreground="{DynamicResource TextPrimaryBrush}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                          VirtualizingPanel.ScrollUnit="Pixel">
                     <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type m:MediaItem}">
                             <Border x:Name="bd" CornerRadius="4" Background="Transparent">
-                                <Button Style="{StaticResource BareButton}" Padding="8"
+                                <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border x:Name="grip" Width="24" Background="Transparent" Cursor="SizeAll"
+                                        ToolTip="Drag to reorder" AutomationProperties.Name="Drag to reorder"
+                                        PreviewMouseLeftButtonDown="OnQueueGripMouseDown">
+                                    <TextBlock Text="&#xE76F;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                                               Foreground="{DynamicResource TextTertiaryBrush}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <Button Grid.Column="1" Style="{StaticResource BareButton}" Padding="4,8,8,8"
                                         Command="{Binding DataContext.PlayQueueItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                         CommandParameter="{Binding}">
                                     <Grid>
@@ -240,7 +258,7 @@
                                         </Grid.ColumnDefinitions>
                                         <Grid Width="40" Height="40">
                                             <Border CornerRadius="2" inf:Img.Size="60" inf:Img.Url="{Binding Thumbnail}" />
-                                            <Border x:Name="nowPlaying" CornerRadius="2" Background="{StaticResource ShadeBrush}" Visibility="Collapsed">
+                                            <Border x:Name="nowPlaying" CornerRadius="2" Background="{DynamicResource ShadeBrush}" Visibility="Collapsed">
                                                 <TextBlock Text="&#xE767;" FontFamily="{StaticResource IconFont}" FontSize="16"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                                             </Border>
@@ -248,14 +266,22 @@
                                         <StackPanel Grid.Column="1" Margin="14,0,8,0" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                             <TextBlock Text="{Binding Subtitle}" Margin="0,2,0,0" FontSize="13" TextTrimming="CharacterEllipsis"
-                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
                                         </StackPanel>
                                         <TextBlock Grid.Column="2" Text="{Binding Duration}" FontSize="13" VerticalAlignment="Center"
-                                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
                                     </Grid>
                                 </Button>
+                                <Button Grid.Column="2" Style="{StaticResource IconButton}" Width="32" Height="32" FontSize="14"
+                                        Margin="0,0,4,0" Content="&#xE74D;" Foreground="{DynamicResource TextSecondaryBrush}"
+                                        ToolTip="Remove from queue" AutomationProperties.Name="Remove from queue"
+                                        Command="{Binding Source={x:Static app:App.Vm}, Path=RemoveFromQueueCommand}"
+                                        CommandParameter="{Binding}" />
+                                </Grid>
                                 <Border.ContextMenu>
                                     <ContextMenu>
+                                        <MenuItem Header="Remove from queue" CommandParameter="{Binding}"
+                                                  Command="{Binding Source={x:Static app:App.Vm}, Path=RemoveFromQueueCommand}" />
                                         <MenuItem Header="Go to artist" CommandParameter="{Binding}"
                                                   Command="{Binding Source={x:Static app:App.Vm}, Path=GoToArtistCommand}" />
                                         <MenuItem Header="Go to album" CommandParameter="{Binding}"
@@ -265,11 +291,13 @@
                             </Border>
                             <DataTemplate.Triggers>
                                 <Trigger SourceName="bd" Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource HoverBrush}" />
                                 </Trigger>
                                 <DataTrigger Binding="{Binding IsCurrent}" Value="True">
-                                    <Setter TargetName="bd" Property="Background" Value="{StaticResource PressedBrush}" />
+                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource PressedBrush}" />
                                     <Setter TargetName="nowPlaying" Property="Visibility" Value="Visible" />
+                                    <!-- The playing song stays put -->
+                                    <Setter TargetName="grip" Property="Visibility" Value="Hidden" />
                                 </DataTrigger>
                             </DataTemplate.Triggers>
                         </DataTemplate>
@@ -282,7 +310,7 @@
         <Border Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="24,0,24,24"
                 Background="#323232" CornerRadius="6" Padding="16,12" MaxWidth="560"
                 Visibility="{Binding Toast, Converter={StaticResource NullToVis}}">
-            <TextBlock Text="{Binding Toast}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Toast}" TextWrapping="Wrap" Foreground="White" />
         </Border>
 
         <!-- ================= Player ================= -->

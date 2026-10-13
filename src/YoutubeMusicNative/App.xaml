@@ -5,6 +5,8 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
+                <!-- Palette: index 0 is swapped between Dark.xaml / Light.xaml at runtime -->
+                <ResourceDictionary Source="Themes/Dark.xaml" />
                 <ResourceDictionary Source="Themes/Theme.xaml" />
                 <ResourceDictionary Source="Themes/Templates.xaml" />
             </ResourceDictionary.MergedDictionaries>

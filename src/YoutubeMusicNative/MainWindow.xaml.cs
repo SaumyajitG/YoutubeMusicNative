@@ -15,7 +15,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        WindowTheming.ApplyDark(this);
+        WindowTheming.Attach(this);
         SizeChanged += (_, _) => UpdateLayoutState();
         Loaded += (_, _) =>
         {

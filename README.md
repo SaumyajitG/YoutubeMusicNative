@@ -51,11 +51,14 @@ YouTube Music Native is written in C# with WPF and plays audio through the Windo
 - **Looks like YouTube Music:** dark theme, home shelves, Explore, Library, artist / album / playlist pages
 - **Search** with live suggestions
 - **Radio & "Up next" queue:** clicking a song starts a radio that keeps extending itself. Also has shuffle, repeat, and Play next / Add to queue (right-click)
+- **Edit the queue:** drag songs by their ≡ handle to reorder them, or remove them with the 🗑 button or the right-click menu
+- **Dark & light themes:** switch from ⚙ Settings
 - **Responsive layout** that adapts to any window size
 - **Seamless playback:** the next song in the queue (including songs you add) is downloaded in the background, so it starts instantly
 - **Native Windows integration:** media keys, the volume flyout, lock-screen controls, and Previous / Play-Pause / Next buttons in the taskbar preview, plus a dark title bar with snap layouts
 - **Light on resources:** about 65–95 MB of private RAM while browsing and playing, under 20 MB when minimized. Uses virtualized lists, images decoded at display size, and a single-file exe
 - **Sign in with Google** in a browser window. Only the resulting session cookie is stored, encrypted with Windows DPAPI.
+  While you're signed in, songs are fetched with your account, so tracks YouTube refuses anonymously still play. You can turn this off in ⚙ Settings.
 
 ## 📦 Download
 

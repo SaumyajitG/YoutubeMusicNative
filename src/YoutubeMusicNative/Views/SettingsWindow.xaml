@@ -1,0 +1,45 @@
+<Window x:Class="YoutubeMusicNative.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Width="480" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{DynamicResource PlayerBgBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
+        FontFamily="{StaticResource UiFont}" FontSize="14" UseLayoutRounding="True">
+    <StackPanel Margin="28,24,28,24">
+        <TextBlock Text="Settings" FontFamily="{StaticResource DisplayFont}" FontSize="22" FontWeight="Bold" />
+
+        <TextBlock Text="APPEARANCE" Margin="0,24,0,10" FontSize="12" FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextSecondaryBrush}" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Dark mode" VerticalAlignment="Center" />
+            <CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding IsDarkMode}"
+                      AutomationProperties.Name="Dark mode" />
+        </Grid>
+
+        <TextBlock Text="PLAYBACK" Margin="0,28,0,10" FontSize="12" FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextSecondaryBrush}" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Margin="0,0,16,0">
+                <TextBlock Text="Use my account for playback" />
+                <TextBlock Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="When signed in, songs are fetched with your Google account, so songs YouTube refuses to anonymous listeners still play. YouTube can rate-limit accounts that are used this way." />
+                <TextBlock Margin="0,6,0,0" FontSize="12" Foreground="{DynamicResource TextTertiaryBrush}"
+                           Text="Applies once you sign in."
+                           Visibility="{Binding Auth.IsSignedIn, Converter={StaticResource BoolToVis}, ConverterParameter=invert}" />
+            </StackPanel>
+            <CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Top" Margin="0,2,0,0"
+                      IsChecked="{Binding UseAccountForPlayback}" AutomationProperties.Name="Use my account for playback" />
+        </Grid>
+
+        <Button Style="{StaticResource PillButton}" Content="Done" Margin="0,28,0,0" HorizontalAlignment="Right"
+                IsCancel="True" IsDefault="True" />
+    </StackPanel>
+</Window>

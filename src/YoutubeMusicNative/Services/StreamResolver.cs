@@ -12,11 +12,12 @@ public sealed record StreamInfo(string Url, string MimeType, long? ContentLength
 
 /// <summary>
 /// Resolves a videoId to a direct audio URL.
+/// 0. Signed in and "use my account for playback" on: yt-dlp with the user's session.
 /// 1. InnerTube /player with native-app clients (direct URLs, no signature deciphering).
-/// 2. Fallback: yt-dlp.exe if it is next to the app or on PATH.
+/// 2. Fallback: anonymous yt-dlp (downloaded to the data folder on first use).
 /// Results are cached so the next track is resolved while the current one plays.
 /// </summary>
-public sealed class StreamResolver(HttpClient http, InnerTubeClient api)
+public sealed class StreamResolver(HttpClient http, InnerTubeClient api, AuthService auth, Settings settings)
 {
     private sealed record PlayerClient(string Name, string Version, int Id, string UserAgent, Action<JsonObject> Extra);
 
@@ -63,10 +64,27 @@ public sealed class StreamResolver(HttpClient http, InnerTubeClient api)
 
     public void Invalidate(string videoId) => _cache.TryRemove(videoId, out _);
 
+    /// <summary>Forget every resolved link (e.g. after signing in/out or changing account playback).</summary>
+    public void Clear() => _cache.Clear();
+
     private async Task<StreamInfo> ResolveUncachedAsync(string videoId)
     {
-        var visitor = await api.EnsureVisitorDataAsync().ConfigureAwait(false);
         var errors = new List<string>();
+
+        if (settings.UseAccountForPlayback && auth.SessionCookie is { } cookie)
+        {
+            try
+            {
+                if (await TryYtDlpAsync(videoId, cookie).ConfigureAwait(false) is { } viaAccount) return viaAccount;
+                errors.Add("account: no playable audio");
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"account: {ex.Message}");
+            }
+        }
+
+        var visitor = await api.EnsureVisitorDataAsync().ConfigureAwait(false);
 
         foreach (var client in Clients)
         {
@@ -86,7 +104,7 @@ public sealed class StreamResolver(HttpClient http, InnerTubeClient api)
             }
         }
 
-        if (await TryYtDlpAsync(videoId).ConfigureAwait(false) is { } fallback) return fallback;
+        if (await TryYtDlpAsync(videoId, cookie: null).ConfigureAwait(false) is { } fallback) return fallback;
         throw new InvalidOperationException("Couldn't get an audio stream for this track. " + string.Join("; ", errors));
     }
 
@@ -156,7 +174,7 @@ public sealed class StreamResolver(HttpClient http, InnerTubeClient api)
         return response.IsSuccessStatusCode;
     }
 
-    private async Task<StreamInfo?> TryYtDlpAsync(string videoId)
+    private async Task<StreamInfo?> TryYtDlpAsync(string videoId, string? cookie)
     {
         var exe = await EnsureYtDlpAsync().ConfigureAwait(false);
         var psi = new ProcessStartInfo(exe)
@@ -167,23 +185,55 @@ public sealed class StreamResolver(HttpClient http, InnerTubeClient api)
             CreateNoWindow = true,
         };
         foreach (var arg in new[] { "-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "--no-warnings",
-                     "--print", "%(url)s", "--print", "%(filesize)s", "--print", "%(http_headers.User-Agent)s", "--print", "%(ext)s",
-                     $"https://music.youtube.com/watch?v={videoId}" })
+                     "--print", "%(url)s", "--print", "%(filesize)s", "--print", "%(http_headers.User-Agent)s", "--print", "%(ext)s" })
             psi.ArgumentList.Add(arg);
 
-        using var proc = Process.Start(psi);
-        if (proc is null) return null;
-        var output = await proc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
-        await proc.WaitForExitAsync().ConfigureAwait(false);
-        var lines = output.Split('\n', StringSplitOptions.TrimEntries);
-        if (proc.ExitCode != 0 || lines.Length < 4 || !lines[0].StartsWith("http", StringComparison.Ordinal)) return null;
+        // The session goes to yt-dlp as a Netscape cookie file that only lives while yt-dlp runs.
+        string? cookieFile = null;
+        if (cookie is not null)
+        {
+            cookieFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ytmn-{Guid.NewGuid():N}.txt");
+            await File.WriteAllTextAsync(cookieFile, ToNetscapeCookies(cookie)).ConfigureAwait(false);
+            psi.ArgumentList.Add("--cookies");
+            psi.ArgumentList.Add(cookieFile);
+        }
+        psi.ArgumentList.Add($"https://music.youtube.com/watch?v={videoId}");
 
-        return new StreamInfo(
-            lines[0],
-            lines[3] == "webm" ? "audio/webm" : "audio/mp4",
-            long.TryParse(lines[1], out var size) ? size : null,
-            lines[2],
-            DateTime.UtcNow.AddHours(5));
+        try
+        {
+            using var proc = Process.Start(psi);
+            if (proc is null) return null;
+            var stderr = proc.StandardError.ReadToEndAsync();
+            var output = await proc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+            await proc.WaitForExitAsync().ConfigureAwait(false);
+            await stderr.ConfigureAwait(false);
+            var lines = output.Split('\n', StringSplitOptions.TrimEntries);
+            if (proc.ExitCode != 0 || lines.Length < 4 || !lines[0].StartsWith("http", StringComparison.Ordinal)) return null;
+
+            return new StreamInfo(
+                lines[0],
+                lines[3] == "webm" ? "audio/webm" : "audio/mp4",
+                long.TryParse(lines[1], out var size) ? size : null,
+                lines[2],
+                DateTime.UtcNow.AddHours(5));
+        }
+        finally
+        {
+            if (cookieFile is not null) File.Delete(cookieFile);
+        }
+    }
+
+    private static string ToNetscapeCookies(string cookieHeader)
+    {
+        var sb = new StringBuilder("# Netscape HTTP Cookie File\n");
+        foreach (var part in cookieHeader.Split(';'))
+        {
+            var eq = part.IndexOf('=');
+            if (eq <= 0) continue;
+            sb.Append(".youtube.com\tTRUE\t/\tTRUE\t2147483647\t")
+              .Append(part[..eq].Trim()).Append('\t').Append(part[(eq + 1)..].Trim()).Append('\n');
+        }
+        return sb.ToString();
     }
 
     /// <summary>yt-dlp lives in the app's data folder and is downloaded the first time it's needed.</summary>

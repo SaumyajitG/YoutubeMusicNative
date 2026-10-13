@@ -18,7 +18,7 @@
     <StackPanel Margin="0,20,0,20">
         <Grid Margin="0,0,0,16">
             <StackPanel VerticalAlignment="Bottom" Margin="0,0,96,0">
-                <TextBlock Text="{Binding Shelf.Strapline}" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}"
+                <TextBlock Text="{Binding Shelf.Strapline}" FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}"
                            TextTrimming="CharacterEllipsis" Margin="0,0,0,2"
                            Visibility="{Binding Shelf.Strapline, Converter={StaticResource NullToVis}}" />
                 <TextBlock Text="{Binding Shelf.Title}" FontFamily="{StaticResource DisplayFont}" FontSize="24" FontWeight="Bold"

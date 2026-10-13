@@ -225,6 +225,56 @@ public sealed class PlayerService : ObservableObject, IDisposable
         _ = _resolver.ResolveAsync(item.VideoId).ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
     }
 
+    /// <summary>
+    /// Reordering rules: the playing song stays put, and other songs can't cross it. Upcoming songs
+    /// are reordered among themselves, already-played songs among themselves.
+    /// </summary>
+    public bool CanMove(MediaItem item, int newIndex)
+    {
+        var from = Queue.IndexOf(item);
+        if (from < 0 || newIndex < 0 || newIndex >= Queue.Count || from == newIndex) return false;
+        if (CurrentIndex < 0) return true;
+        if (from == CurrentIndex) return false;
+        return from < CurrentIndex ? newIndex < CurrentIndex : newIndex > CurrentIndex;
+    }
+
+    public void Move(MediaItem item, int newIndex)
+    {
+        if (CanMove(item, newIndex)) Queue.Move(Queue.IndexOf(item), newIndex);
+    }
+
+    /// <summary>Removes a song from "Up next". Removing the playing song moves on to the next one.</summary>
+    public void Remove(MediaItem item)
+    {
+        var index = Queue.IndexOf(item);
+        if (index < 0) return;
+
+        if (index != CurrentIndex)
+        {
+            if (index < CurrentIndex) CurrentIndex--;
+            Queue.RemoveAt(index);
+            return;
+        }
+
+        Queue.RemoveAt(index);
+        if (index < Queue.Count)
+        {
+            PlayAt(index);
+            return;
+        }
+
+        // It was the last song: stop.
+        ++_playToken;
+        _mp.Pause();
+        _mp.Source = null;
+        _timer.Stop();
+        CurrentIndex = -1;
+        Current = null;
+        IsPlaying = false;
+        IsBuffering = false;
+        Position = Duration = 0;
+    }
+
     // ---------- transport ----------
 
     public void PlayAt(int index)
