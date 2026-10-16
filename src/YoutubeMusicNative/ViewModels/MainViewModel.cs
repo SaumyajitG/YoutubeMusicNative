@@ -11,9 +11,11 @@ namespace YoutubeMusicNative.ViewModels;
 public sealed class MainViewModel : ObservableObject
 {
     private const int MaxHistory = 30;
+    private const int MaxCachedPages = 20;
     private readonly List<PageViewModel> _history = [];
+    /// <summary>Opened pages stay loaded until the app closes or the refresh button; least recently opened go first.</summary>
+    private readonly OrderedDictionary<string, PageViewModel> _pages = [];
     private readonly StreamResolver _resolver;
-    private PageViewModel? _home;
     private CancellationTokenSource? _suggestCts;
     private readonly DispatcherTimer _toastTimer;
 
@@ -25,6 +27,7 @@ public sealed class MainViewModel : ObservableObject
         _resolver = new StreamResolver(App.Http, Api, Auth, settings);
         Player = new PlayerService(Api, _resolver, App.Http, settings);
         OpenSettingsCommand = new RelayCommand(OpenSettings);
+        RefreshCommand = new RelayCommand(_ => _ = CurrentPage?.RefreshAsync(), _ => CurrentPage?.CanRefresh == true);
 
         HomeCommand = new RelayCommand(() => NavigateRoot("home"));
         ExploreCommand = new RelayCommand(() => NavigateRoot("explore"));
@@ -89,6 +92,7 @@ public sealed class MainViewModel : ObservableObject
     public ICommand PlayQueueItemCommand { get; }
     public ICommand RemoveFromQueueCommand { get; }
     public ICommand OpenSettingsCommand { get; }
+    public ICommand RefreshCommand { get; }
 
     // ---------- settings ----------
 
@@ -114,6 +118,44 @@ public sealed class MainViewModel : ObservableObject
             Settings.UseAccountForPlayback = value;
             Settings.Save();
             _resolver.Clear(); // stream links depend on how they were fetched
+            OnPropertyChanged();
+        }
+    }
+
+    public bool NormalizeVolume
+    {
+        get => Settings.NormalizeVolume;
+        set
+        {
+            if (Settings.NormalizeVolume == value) return;
+            Settings.NormalizeVolume = value;
+            Settings.Save();
+            Player.ApplyVolume();
+            OnPropertyChanged();
+        }
+    }
+
+    public bool Crossfade
+    {
+        get => Settings.Crossfade;
+        set
+        {
+            if (Settings.Crossfade == value) return;
+            Settings.Crossfade = value;
+            Settings.Save();
+            OnPropertyChanged();
+        }
+    }
+
+    public double CrossfadeSeconds
+    {
+        get => Settings.CrossfadeSeconds;
+        set
+        {
+            value = Math.Clamp(Math.Round(value), 1, 12);
+            if (Settings.CrossfadeSeconds == value) return;
+            Settings.CrossfadeSeconds = value;
+            Settings.Save();
             OnPropertyChanged();
         }
     }
@@ -148,6 +190,7 @@ public sealed class MainViewModel : ObservableObject
 
     private void Navigate(PageViewModel page)
     {
+        if (page == CurrentPage) return;
         if (CurrentPage is not null)
         {
             _history.Add(CurrentPage);
@@ -161,22 +204,26 @@ public sealed class MainViewModel : ObservableObject
     {
         var page = nav switch
         {
-            "explore" => PageViewModel.Explore(Api),
+            "explore" => Cached("explore", () => PageViewModel.Explore(Api)),
             "library" when !Auth.IsSignedIn => PageViewModel.Message(Api, "library", "Library",
                 new MessageRow("Sign in to see your playlists and liked music.", "Sign in", SignInCommand)),
-            "library" => PageViewModel.Library(Api),
-            _ => HomePage(),
+            "library" => Cached("library", () => PageViewModel.Library(Api)),
+            _ => Cached("home", () => PageViewModel.Home(Api)),
         };
-        if (page == CurrentPage) return;
         Navigate(page);
     }
 
-    private PageViewModel HomePage()
+    private PageViewModel Cached(string key, Func<PageViewModel> create)
     {
-        // Keep home warm for fast back-and-forth; refresh after 30 minutes.
-        if (_home is null || (_home.LoadedAt != default && DateTime.UtcNow - _home.LoadedAt > TimeSpan.FromMinutes(30)))
-            _home = PageViewModel.Home(Api);
-        return _home;
+        if (_pages.Remove(key, out var page))
+        {
+            _pages.Add(key, page); // now the most recently opened
+            return page;
+        }
+        page = create();
+        _pages.Add(key, page);
+        if (_pages.Count > MaxCachedPages) _pages.RemoveAt(0);
+        return page;
     }
 
     public void GoBack()
@@ -192,7 +239,7 @@ public sealed class MainViewModel : ObservableObject
         if (item.BrowseId is not null && item.VideoId is null)
         {
             var nav = item.Kind == ItemKind.Category ? "explore" : ActiveNav;
-            Navigate(PageViewModel.Browse(Api, item, nav));
+            Navigate(Cached($"browse:{item.BrowseId}|{item.BrowseParams}", () => PageViewModel.Browse(Api, item, nav)));
         }
         else
         {
@@ -212,12 +259,12 @@ public sealed class MainViewModel : ObservableObject
         if (item is null) return;
         var id = artist ? item.ArtistBrowseId : item.AlbumBrowseId;
         if (id is null) return;
-        Navigate(PageViewModel.Browse(Api, new MediaItem
+        Navigate(Cached($"browse:{id}|", () => PageViewModel.Browse(Api, new MediaItem
         {
             Title = (artist ? item.ArtistName : item.AlbumName) ?? "",
             BrowseId = id,
             Kind = artist ? ItemKind.Artist : ItemKind.Album,
-        }, ActiveNav));
+        }, ActiveNav)));
     }
 
     // ---------- search ----------
@@ -244,7 +291,7 @@ public sealed class MainViewModel : ObservableObject
         _suggestCts?.Cancel();
         IsSuggestionsOpen = false;
         if (_searchText != query) { _searchText = query; OnPropertyChanged(nameof(SearchText)); }
-        Navigate(PageViewModel.Search(Api, query));
+        Navigate(Cached("search:" + query, () => PageViewModel.Search(Api, query)));
     }
 
     private async Task UpdateSuggestionsAsync(string text)
@@ -283,7 +330,7 @@ public sealed class MainViewModel : ObservableObject
         var dialog = new Views.LoginWindow(Auth) { Owner = Application.Current.MainWindow };
         if (dialog.ShowDialog() != true) return;
         _resolver.Clear();
-        _home = null;
+        _pages.Clear(); // pages differ per account
         _history.Clear();
         CurrentPage = null;
         NavigateRoot("home");
@@ -296,7 +343,7 @@ public sealed class MainViewModel : ObservableObject
         Auth.SignOut();
         _resolver.Clear();
         Account = null;
-        _home = null;
+        _pages.Clear();
         _history.Clear();
         CurrentPage = null;
         NavigateRoot("home");

@@ -47,7 +47,7 @@ public sealed class PageViewModel : ObservableObject
 
     public static PageViewModel Message(InnerTubeClient api, string nav, string title, MessageRow message)
     {
-        var page = new PageViewModel(api, nav, title, false, _ => Task.FromResult(new BrowseResult())) { _loaded = true };
+        var page = new PageViewModel(api, nav, title, false, _ => Task.FromResult(new BrowseResult())) { _loaded = true, CanRefresh = false };
         page.Rows.Add(new TitleRow(title, null));
         page.Rows.Add(message);
         return page;
@@ -58,7 +58,7 @@ public sealed class PageViewModel : ObservableObject
     public string Nav { get; }
     public string? Title { get; }
     public bool IsCollection { get; }
-    public DateTime LoadedAt { get; private set; }
+    public bool CanRefresh { get; private init; } = true;
     public ObservableCollection<object> Rows { get; } = [];
     public double ScrollOffset { get; set; }
     public ICommand PlayAllCommand { get; }
@@ -77,7 +77,6 @@ public sealed class PageViewModel : ObservableObject
         {
             Build(await _loader(CancellationToken.None));
             _loaded = true;
-            LoadedAt = DateTime.UtcNow;
         }
         catch (Exception ex)
         {
@@ -88,6 +87,14 @@ public sealed class PageViewModel : ObservableObject
         {
             IsLoading = false;
         }
+    }
+
+    /// <summary>Fetches the page again; the current content stays visible until the new one arrives.</summary>
+    public Task RefreshAsync()
+    {
+        if (!CanRefresh || IsLoading) return Task.CompletedTask;
+        _loaded = false;
+        return LoadAsync();
     }
 
     public async Task LoadMoreAsync()

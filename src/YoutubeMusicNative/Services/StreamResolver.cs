@@ -8,7 +8,9 @@ using YoutubeMusicNative.Infrastructure;
 
 namespace YoutubeMusicNative.Services;
 
-public sealed record StreamInfo(string Url, string MimeType, long? ContentLength, string UserAgent, DateTime ExpiresAtUtc);
+/// <param name="LoudnessDb">How much louder than YouTube's reference level the song is (null if unknown).</param>
+public sealed record StreamInfo(string Url, string MimeType, long? ContentLength, string UserAgent, DateTime ExpiresAtUtc,
+    double? LoudnessDb = null);
 
 /// <summary>
 /// Resolves a videoId to a direct audio URL.
@@ -75,7 +77,8 @@ public sealed class StreamResolver(HttpClient http, InnerTubeClient api, AuthSer
         {
             try
             {
-                if (await TryYtDlpAsync(videoId, cookie).ConfigureAwait(false) is { } viaAccount) return viaAccount;
+                if (await TryYtDlpAsync(videoId, cookie).ConfigureAwait(false) is { } viaAccount)
+                    return viaAccount with { LoudnessDb = await LoudnessAsync(videoId).ConfigureAwait(false) };
                 errors.Add("account: no playable audio");
             }
             catch (Exception ex)
@@ -104,11 +107,59 @@ public sealed class StreamResolver(HttpClient http, InnerTubeClient api, AuthSer
             }
         }
 
-        if (await TryYtDlpAsync(videoId, cookie: null).ConfigureAwait(false) is { } fallback) return fallback;
+        if (await TryYtDlpAsync(videoId, cookie: null).ConfigureAwait(false) is { } fallback)
+            return fallback with { LoudnessDb = await LoudnessAsync(videoId).ConfigureAwait(false) };
         throw new InvalidOperationException("Couldn't get an audio stream for this track. " + string.Join("; ", errors));
     }
 
+    /// <summary>yt-dlp doesn't report loudness, so ask the app clients just for that (null if they're blocked).</summary>
+    private async Task<double?> LoudnessAsync(string videoId)
+    {
+        var visitor = await api.EnsureVisitorDataAsync().ConfigureAwait(false);
+        foreach (var client in Clients)
+        {
+            try
+            {
+                var root = await CallPlayerAsync(client, videoId, visitor).ConfigureAwait(false);
+                // Sent per audio format, and sometimes also in playerConfig.audioConfig.
+                if (root.FindFirst("loudnessDb").Double() is { } db) return db;
+            }
+            catch
+            {
+                // Volume levelling is optional.
+            }
+        }
+        return null;
+    }
+
     private async Task<StreamInfo?> TryPlayerAsync(PlayerClient client, string videoId, string? visitor)
+    {
+        var root = await CallPlayerAsync(client, videoId, visitor).ConfigureAwait(false);
+
+        var status = root.Str("playabilityStatus.status");
+        if (status != "OK") throw new InvalidOperationException(root.Str("playabilityStatus.reason") ?? status ?? "unplayable");
+
+        var expiresIn = root.Path("streamingData.expiresInSeconds").Long() ?? 21540;
+        var best = root.Path("streamingData.adaptiveFormats").Items()
+            .Where(f => f.Get("url").Str() is not null && f.Get("mimeType").Str()?.StartsWith("audio/", StringComparison.Ordinal) == true)
+            // Prefer AAC/MP4 (decoded natively by Media Foundation), then highest bitrate.
+            .OrderByDescending(f => f.Get("mimeType").Str()!.StartsWith("audio/mp4", StringComparison.Ordinal))
+            .ThenByDescending(f => f.Get("bitrate").Long() ?? 0)
+            .FirstOrDefault();
+        if (best is null) return null;
+
+        var mime = best.Get("mimeType").Str()!;
+        var semicolon = mime.IndexOf(';');
+        return new StreamInfo(
+            best.Get("url").Str()!,
+            semicolon > 0 ? mime[..semicolon] : mime,
+            best.Get("contentLength").Long(),
+            client.UserAgent,
+            DateTime.UtcNow.AddSeconds(expiresIn),
+            best.Get("loudnessDb").Double() ?? root.FindFirst("loudnessDb").Double());
+    }
+
+    private async Task<JsonNode?> CallPlayerAsync(PlayerClient client, string videoId, string? visitor)
     {
         var context = new JsonObject
         {
@@ -140,28 +191,7 @@ public sealed class StreamResolver(HttpClient http, InnerTubeClient api, AuthSer
 
         using var response = await http.SendAsync(request).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var root = JsonNode.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
-
-        var status = root.Str("playabilityStatus.status");
-        if (status != "OK") throw new InvalidOperationException(root.Str("playabilityStatus.reason") ?? status ?? "unplayable");
-
-        var expiresIn = root.Path("streamingData.expiresInSeconds").Long() ?? 21540;
-        var best = root.Path("streamingData.adaptiveFormats").Items()
-            .Where(f => f.Get("url").Str() is not null && f.Get("mimeType").Str()?.StartsWith("audio/", StringComparison.Ordinal) == true)
-            // Prefer AAC/MP4 (decoded natively by Media Foundation), then highest bitrate.
-            .OrderByDescending(f => f.Get("mimeType").Str()!.StartsWith("audio/mp4", StringComparison.Ordinal))
-            .ThenByDescending(f => f.Get("bitrate").Long() ?? 0)
-            .FirstOrDefault();
-        if (best is null) return null;
-
-        var mime = best.Get("mimeType").Str()!;
-        var semicolon = mime.IndexOf(';');
-        return new StreamInfo(
-            best.Get("url").Str()!,
-            semicolon > 0 ? mime[..semicolon] : mime,
-            best.Get("contentLength").Long(),
-            client.UserAgent,
-            DateTime.UtcNow.AddSeconds(expiresIn));
+        return JsonNode.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
     }
 
     /// <summary>YouTube may hand out URLs that only serve the first ~1 MB; probe the middle of the file.</summary>

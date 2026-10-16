@@ -40,6 +40,9 @@ internal static class JsonExtensions
         return null;
     }
 
+    public static double? Double(this JsonNode? n) =>
+        n is JsonValue v && v.TryGetValue<double>(out var d) ? d : null;
+
     /// <summary>Flattens a "runs" / "simpleText" text object into a plain string.</summary>
     public static string? Text(this JsonNode? n)
     {

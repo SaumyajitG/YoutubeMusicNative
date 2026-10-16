@@ -44,6 +44,8 @@
                 <Button Style="{StaticResource IconButton}" Content="&#xE72B;" ToolTip="Back (Alt+Left)" Margin="4,0,0,0"
                         Command="{Binding BackCommand}"
                         Visibility="{Binding CanGoBack, Converter={StaticResource BoolToVis}}" />
+                <Button Style="{StaticResource IconButton}" Content="&#xE72C;" ToolTip="Refresh this page" Margin="4,0,0,0"
+                        Command="{Binding RefreshCommand}" />
                 <Button Style="{StaticResource BareButton}" Margin="12,0,0,0" Command="{Binding HomeCommand}" ToolTip="Home">
                     <StackPanel Orientation="Horizontal">
                         <Grid Width="26" Height="26">

@@ -13,7 +13,7 @@
         <Slider x:Name="Seek" Grid.ColumnSpan="3" Style="{StaticResource ThinSlider}" Tag="3"
                 VerticalAlignment="Top" Margin="0,-8,0,0" Minimum="0"
                 Maximum="{Binding Player.Duration, Mode=OneWay}" Value="{Binding Player.Position, Mode=OneWay}"
-                PreviewMouseLeftButtonDown="OnSeekStart" PreviewMouseLeftButtonUp="OnSeekEnd" />
+                PreviewMouseLeftButtonUp="OnSeekEnd" />
 
         <!-- Transport -->
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">

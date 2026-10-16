@@ -6,7 +6,12 @@ namespace YoutubeMusicNative.Views;
 
 public partial class PlayerBar : UserControl
 {
-    public PlayerBar() => InitializeComponent();
+    public PlayerBar()
+    {
+        InitializeComponent();
+        // The slider marks presses on its bar handled; still pause position updates while the user drags.
+        Seek.AddHandler(PreviewMouseLeftButtonDownEvent, new MouseButtonEventHandler(OnSeekStart), handledEventsToo: true);
+    }
 
     private MainViewModel? Vm => DataContext as MainViewModel;
 

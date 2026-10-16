@@ -16,20 +16,30 @@ namespace YoutubeMusicNative.Services;
 public enum RepeatMode { Off, All, One }
 
 /// <summary>
-/// Playback queue on top of the OS media player (Media Foundation). Using the WinRT player gives
-/// hardware media keys, the volume flyout and lock-screen controls (SMTC) for free.
+/// Playback queue on top of the OS media player (Media Foundation). Two players take turns so songs
+/// can crossfade; the Windows media controls (media keys, lock screen) are driven by hand.
 /// </summary>
 public sealed class PlayerService : ObservableObject, IDisposable
 {
-    private readonly WinMediaPlayer _mp = new() { AudioCategory = MediaPlayerAudioCategory.Media, AutoPlay = true };
     private readonly InnerTubeClient _api;
     private readonly StreamResolver _resolver;
     private readonly HttpClient _http;
     private readonly Settings _settings;
     private readonly Dispatcher _ui = Application.Current.Dispatcher;
     private readonly DispatcherTimer _timer;
+    private readonly DispatcherTimer _fadeTimer;
+    private readonly SystemMediaTransportControls _smtc;
 
-    private sealed record PreparedAudio(ArraySegment<byte> Data, string Mime);
+    /// <summary>Plays the current song.</summary>
+    private WinMediaPlayer _mp;
+    /// <summary>Idle, or playing the previous song while it fades out.</summary>
+    private WinMediaPlayer _spare;
+    private bool _fading;
+    private DateTime _fadeStartedAt;
+    private double _fadeSeconds;
+    private double? _loudness, _spareLoudness;
+
+    private sealed record PreparedAudio(ArraySegment<byte> Data, string Mime, double? LoudnessDb);
 
     private int _playToken;
     private int _queueGeneration;
@@ -47,21 +57,42 @@ public sealed class PlayerService : ObservableObject, IDisposable
         _http = http;
         _settings = settings;
         _volume = Math.Clamp(settings.Volume, 0, 100);
-        _mp.Volume = _volume / 100.0;
+        _mp = CreatePlayer();
+        _spare = CreatePlayer();
+        ApplyVolume();
 
-        var cm = _mp.CommandManager;
-        cm.IsEnabled = true;
-        cm.NextBehavior.EnablingRule = MediaCommandEnablingRule.Always;
-        cm.PreviousBehavior.EnablingRule = MediaCommandEnablingRule.Always;
-        cm.NextReceived += (_, e) => { e.Handled = true; _ui.InvokeAsync(Next); };
-        cm.PreviousReceived += (_, e) => { e.Handled = true; _ui.InvokeAsync(Previous); };
-
-        _mp.MediaEnded += (_, _) => _ui.InvokeAsync(OnEnded);
-        _mp.MediaFailed += (_, e) => _ui.InvokeAsync(() => OnFailed(e.ErrorMessage));
-        _mp.PlaybackSession.PlaybackStateChanged += (_, _) => _ui.InvokeAsync(UpdateState);
+        _smtc = _mp.SystemMediaTransportControls;
+        _smtc.IsEnabled = _smtc.IsPlayEnabled = _smtc.IsPauseEnabled = _smtc.IsNextEnabled = _smtc.IsPreviousEnabled = true;
+        _smtc.ButtonPressed += (_, e) => _ui.InvokeAsync(() =>
+        {
+            switch (e.Button)
+            {
+                case SystemMediaTransportControlsButton.Play when !IsPlaying:
+                case SystemMediaTransportControlsButton.Pause when IsPlaying:
+                    TogglePlayPause();
+                    break;
+                case SystemMediaTransportControlsButton.Next: Next(); break;
+                case SystemMediaTransportControlsButton.Previous: Previous(); break;
+            }
+        });
+        _smtc.PlaybackPositionChangeRequested += (_, e) => _ui.InvokeAsync(() => Seek(e.RequestedPlaybackPosition.TotalSeconds));
 
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => Tick(), _ui);
+        _fadeTimer = new DispatcherTimer(DispatcherPriority.Normal, _ui) { Interval = TimeSpan.FromMilliseconds(50) };
+        _fadeTimer.Tick += (_, _) => { if (FadeProgress() >= 1) StopFade(); else ApplyVolume(); };
         Queue.CollectionChanged += (_, _) => QueuePrepareNext();
+    }
+
+    private WinMediaPlayer CreatePlayer()
+    {
+        var mp = new WinMediaPlayer { AudioCategory = MediaPlayerAudioCategory.Media, AutoPlay = true };
+        // Both players feed one set of Windows media controls, updated by hand below.
+        mp.CommandManager.IsEnabled = false;
+        // Only the player for the current song drives the UI; a fading-out song ends silently.
+        mp.MediaEnded += (_, _) => _ui.InvokeAsync(() => { if (mp == _mp) OnEnded(); });
+        mp.MediaFailed += (_, e) => _ui.InvokeAsync(() => { if (mp == _mp) OnFailed(e.ErrorMessage); });
+        mp.PlaybackSession.PlaybackStateChanged += (_, _) => _ui.InvokeAsync(() => { if (mp == _mp) UpdateState(); });
+        return mp;
     }
 
     // ---------- state ----------
@@ -116,7 +147,7 @@ public sealed class PlayerService : ObservableObject, IDisposable
         {
             value = Math.Clamp(value, 0, 100);
             if (!Set(ref _volume, value)) return;
-            _mp.Volume = value / 100.0;
+            ApplyVolume();
             _settings.Volume = value;
             if (value > 0 && IsMuted) IsMuted = false;
         }
@@ -126,7 +157,7 @@ public sealed class PlayerService : ObservableObject, IDisposable
     public bool IsMuted
     {
         get => _isMuted;
-        set { if (Set(ref _isMuted, value)) _mp.IsMuted = value; }
+        set { if (Set(ref _isMuted, value)) _mp.IsMuted = _spare.IsMuted = value; }
     }
 
     private bool _shuffle;
@@ -265,6 +296,7 @@ public sealed class PlayerService : ObservableObject, IDisposable
 
         // It was the last song: stop.
         ++_playToken;
+        StopFade();
         _mp.Pause();
         _mp.Source = null;
         _timer.Stop();
@@ -294,6 +326,7 @@ public sealed class PlayerService : ObservableObject, IDisposable
     public void TogglePlayPause()
     {
         if (Current is null) return;
+        StopFade();
         if (_mp.Source is null) { _ = PlayCurrentAsync(); return; }
         if (_mp.PlaybackSession.PlaybackState == MediaPlaybackState.Playing) _mp.Pause();
         else _mp.Play();
@@ -315,8 +348,10 @@ public sealed class PlayerService : ObservableObject, IDisposable
     public void Seek(double seconds)
     {
         if (_mp.Source is null) return;
+        StopFade();
         _mp.PlaybackSession.Position = TimeSpan.FromSeconds(Math.Max(0, seconds));
         Position = seconds;
+        UpdateTimeline();
     }
 
     public void ToggleShuffle()
@@ -341,12 +376,14 @@ public sealed class PlayerService : ObservableObject, IDisposable
 
     // ---------- internals ----------
 
-    private async Task PlayCurrentAsync()
+    /// <param name="crossfade">Keep the previous song playing on the spare player while it fades out.</param>
+    private async Task PlayCurrentAsync(bool crossfade = false)
     {
         var item = Current;
         if (item?.VideoId is null) return;
 
         var token = ++_playToken;
+        if (!crossfade) StopFade();
         Error = null;
         IsBuffering = true;
         Position = 0;
@@ -362,7 +399,10 @@ public sealed class PlayerService : ObservableObject, IDisposable
             var audio = await (prepared ?? LoadAudioAsync(item.VideoId));
             if (token != _playToken) return;
             var stream = new MemoryStream(audio.Data.Array!, audio.Data.Offset, audio.Data.Count, writable: false).AsRandomAccessStream();
-            _mp.Source = BuildPlaybackItem(MediaSource.CreateFromStream(stream, audio.Mime), item);
+            _mp.Source = MediaSource.CreateFromStream(stream, audio.Mime);
+            _loudness = audio.LoudnessDb;
+            ApplyVolume();
+            UpdateDisplay(item);
             _mp.Play();
             _startedAt = DateTime.UtcNow;
             PrepareNext();
@@ -385,8 +425,8 @@ public sealed class PlayerService : ObservableObject, IDisposable
         // googlevideo rejects Media Foundation's own range requests, so fetch the (~3-5 MB)
         // audio ourselves in &range= chunks and play it from memory.
         var data = await DownloadAsync(info).ConfigureAwait(false);
-        if (info.MimeType == "audio/mp4" && AdtsRemuxer.Remux(data) is { } adts) return new PreparedAudio(adts, "audio/aac");
-        return new PreparedAudio(data, info.MimeType);
+        if (info.MimeType == "audio/mp4" && AdtsRemuxer.Remux(data) is { } adts) return new PreparedAudio(adts, "audio/aac", info.LoudnessDb);
+        return new PreparedAudio(data, info.MimeType, info.LoudnessDb);
     }
 
     private async Task<byte[]> DownloadAsync(StreamInfo info)
@@ -416,11 +456,69 @@ public sealed class PlayerService : ObservableObject, IDisposable
         return data;
     }
 
-    private MediaItem? UpcomingItem()
+    private int UpcomingIndex()
     {
-        if (Repeat == RepeatMode.One || Queue.Count == 0) return null;
-        if (CurrentIndex + 1 < Queue.Count) return Queue[CurrentIndex + 1];
-        return Repeat == RepeatMode.All ? Queue[0] : null;
+        if (Repeat == RepeatMode.One || Queue.Count == 0) return -1;
+        if (CurrentIndex + 1 < Queue.Count) return CurrentIndex + 1;
+        return Repeat == RepeatMode.All ? 0 : -1;
+    }
+
+    private MediaItem? UpcomingItem() => UpcomingIndex() is >= 0 and var i ? Queue[i] : null;
+
+    // ---------- volume & crossfade ----------
+
+    /// <summary>Combines the volume slider, per-song levelling and any crossfade in progress.</summary>
+    public void ApplyVolume()
+    {
+        // Squared ramps change loudness at a steady rate to the ear: the old song fades out gradually
+        // over the whole fade while the new one fades in gradually.
+        var fade = FadeProgress();
+        _mp.Volume = _volume / 100 * Gain(_loudness) * fade * fade;
+        if (_fading) _spare.Volume = _volume / 100 * Gain(_spareLoudness) * (1 - fade) * (1 - fade);
+    }
+
+    /// <summary>Like YouTube, only turns songs louder than the reference level down; never boosts.</summary>
+    private double Gain(double? loudnessDb) =>
+        _settings.NormalizeVolume && loudnessDb > 0 ? Math.Pow(10, -loudnessDb.Value / 20) : 1;
+
+    private double FadeProgress() =>
+        _fading ? Math.Clamp((DateTime.UtcNow - _fadeStartedAt).TotalSeconds / _fadeSeconds, 0, 1) : 1;
+
+    /// <summary>
+    /// Near the end of a song, starts the next one on the spare player and fades between them.
+    /// Only when the next song is already downloaded; otherwise it plays normally.
+    /// </summary>
+    private void TryStartCrossfade()
+    {
+        if (_fading || IsSeeking || !_settings.Crossfade) return;
+        var session = _mp.PlaybackSession;
+        var duration = session.NaturalDuration.TotalSeconds;
+        var seconds = Math.Min(_settings.CrossfadeSeconds, duration / 3);
+        if (duration <= 0 || duration - session.Position.TotalSeconds > seconds) return;
+
+        var index = UpcomingIndex();
+        if (index < 0 || _next is not { } n || n.VideoId != Queue[index].VideoId || !n.Audio.IsCompletedSuccessfully) return;
+
+        (_mp, _spare) = (_spare, _mp);
+        _spareLoudness = _loudness;
+        _fading = true;
+        _fadeSeconds = seconds;
+        _fadeStartedAt = DateTime.UtcNow;
+        _fadeTimer.Start();
+        CurrentIndex = index;
+        Current = Queue[index];
+        _ = PlayCurrentAsync(crossfade: true);
+    }
+
+    /// <summary>Ends a crossfade immediately: the previous song stops and the current one is at full volume.</summary>
+    private void StopFade()
+    {
+        if (!_fading) return;
+        _fading = false;
+        _fadeTimer.Stop();
+        _spare.Pause();
+        _spare.Source = null;
+        ApplyVolume();
     }
 
     /// <summary>Queue edits arrive in bursts (e.g. a whole radio); re-check the upcoming song once.</summary>
@@ -459,19 +557,28 @@ public sealed class PlayerService : ObservableObject, IDisposable
             GC.Collect();
         });
 
-    private static MediaPlaybackItem BuildPlaybackItem(MediaSource source, MediaItem item)
+    // ---------- Windows media controls ----------
+
+    private void UpdateDisplay(MediaItem item)
     {
-        var playback = new MediaPlaybackItem(source);
-        var props = playback.GetDisplayProperties();
-        props.Type = MediaPlaybackType.Music;
-        props.MusicProperties.Title = item.Title;
-        props.MusicProperties.Artist = item.ArtistName ?? item.Subtitle ?? "";
-        props.MusicProperties.AlbumTitle = item.AlbumName ?? "";
-        if (item.Thumbnail is not null)
-            props.Thumbnail = RandomAccessStreamReference.CreateFromUri(new Uri(Thumbs.Resize(item.Thumbnail, 300)));
-        playback.ApplyDisplayProperties(props);
-        return playback;
+        var display = _smtc.DisplayUpdater;
+        display.Type = MediaPlaybackType.Music;
+        display.MusicProperties.Title = item.Title;
+        display.MusicProperties.Artist = item.ArtistName ?? item.Subtitle ?? "";
+        display.MusicProperties.AlbumTitle = item.AlbumName ?? "";
+        display.Thumbnail = item.Thumbnail is null ? null
+            : RandomAccessStreamReference.CreateFromUri(new Uri(Thumbs.Resize(item.Thumbnail, 300)));
+        display.Update();
     }
+
+    private void UpdateTimeline() => _smtc.UpdateTimelineProperties(new SystemMediaTransportControlsTimelineProperties
+    {
+        StartTime = TimeSpan.Zero,
+        MinSeekTime = TimeSpan.Zero,
+        EndTime = TimeSpan.FromSeconds(Duration),
+        MaxSeekTime = TimeSpan.FromSeconds(Duration),
+        Position = TimeSpan.FromSeconds(Position),
+    });
 
     private void OnFailed(string message)
     {
@@ -503,6 +610,14 @@ public sealed class PlayerService : ObservableObject, IDisposable
         IsBuffering = state is MediaPlaybackState.Opening or MediaPlaybackState.Buffering;
         if (IsPlaying) _timer.Start(); else _timer.Stop();
         Tick();
+        _smtc.PlaybackStatus = state switch
+        {
+            MediaPlaybackState.Playing => MediaPlaybackStatus.Playing,
+            MediaPlaybackState.Paused => MediaPlaybackStatus.Paused,
+            MediaPlaybackState.Opening or MediaPlaybackState.Buffering => MediaPlaybackStatus.Changing,
+            _ => MediaPlaybackStatus.Stopped,
+        };
+        UpdateTimeline();
     }
 
     private void Tick()
@@ -510,6 +625,7 @@ public sealed class PlayerService : ObservableObject, IDisposable
         var session = _mp.PlaybackSession;
         if (session.NaturalDuration > TimeSpan.Zero) Duration = session.NaturalDuration.TotalSeconds;
         if (!IsSeeking) Position = session.Position.TotalSeconds;
+        TryStartCrossfade();
     }
 
     /// <summary>Keeps radio/autoplay going by loading more of the queue as it runs out.</summary>
@@ -566,6 +682,8 @@ public sealed class PlayerService : ObservableObject, IDisposable
     public void Dispose()
     {
         _timer.Stop();
+        _fadeTimer.Stop();
         _mp.Dispose();
+        _spare.Dispose();
     }
 }

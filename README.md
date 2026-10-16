@@ -54,7 +54,9 @@ YouTube Music Native is written in C# with WPF and plays audio through the Windo
 - **Edit the queue:** drag songs by their ≡ handle to reorder them, or remove them with the 🗑 button or the right-click menu
 - **Dark & light themes:** switch from ⚙ Settings
 - **Responsive layout** that adapts to any window size
-- **Seamless playback:** the next song in the queue (including songs you add) is downloaded in the background, so it starts instantly
+- **Seamless playback:** the next song in the queue (including songs you add) is downloaded in the background, so it starts instantly. Optional Spotify-style **crossfade** (1–12 s) in ⚙ Settings
+- **Volume levelling:** loud songs are turned down to YouTube's reference loudness so tracks play at a similar level (on by default, ⚙ Settings)
+- **Cached pages:** pages you've opened stay loaded until you close the app, so going back to them is instant. The ⟳ button next to Back reloads the current page
 - **Native Windows integration:** media keys, the volume flyout, lock-screen controls, and Previous / Play-Pause / Next buttons in the taskbar preview, plus a dark title bar with snap layouts
 - **Light on resources:** about 65–95 MB of private RAM while browsing and playing, under 20 MB when minimized. Uses virtualized lists, images decoded at display size, and a single-file exe
 - **Sign in with Google** in a browser window. Only the resulting session cookie is stored, encrypted with Windows DPAPI.
@@ -89,6 +91,7 @@ See [Build from source](#-build-from-source).
 | Play / pause | <kbd>Space</kbd> or your keyboard's media keys |
 | Search | <kbd>Ctrl</kbd>+<kbd>F</kbd> or <kbd>/</kbd> |
 | Go back | <kbd>Alt</kbd>+<kbd>←</kbd> or the mouse back button |
+| Reload a page | The ⟳ button next to Back |
 | Scroll a shelf sideways | <kbd>Shift</kbd>+mouse wheel, or the ‹ › buttons |
 | Song options | Right-click a song |
 | Up next queue | Click the now-playing area or the ⌃ button in the player bar |

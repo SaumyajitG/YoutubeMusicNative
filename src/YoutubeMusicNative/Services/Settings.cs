@@ -21,6 +21,11 @@ public sealed class Settings
     public bool DarkMode { get; set; } = true;
     /// <summary>When signed in, fetch songs with the user's account (via yt-dlp + session cookies).</summary>
     public bool UseAccountForPlayback { get; set; } = true;
+    /// <summary>Turn loud songs down to YouTube's reference loudness.</summary>
+    public bool NormalizeVolume { get; set; } = true;
+    /// <summary>Fade between songs that end by themselves (off by default, like Spotify).</summary>
+    public bool Crossfade { get; set; }
+    public double CrossfadeSeconds { get; set; } = 5;
     public double WindowWidth { get; set; } = 1280;
     public double WindowHeight { get; set; } = 820;
     public bool WindowMaximized { get; set; }

@@ -170,7 +170,8 @@
             <Setter.Value>
                 <ControlTemplate TargetType="RepeatButton">
                     <Border Background="Transparent">
-                        <Border Height="{Binding Tag, RelativeSource={RelativeSource AncestorType=Slider}}"
+                        <!-- The track overhangs the rail by half a thumb; shift the bar back so it ends at the thumb's centre. -->
+                        <Border Height="{Binding Tag, RelativeSource={RelativeSource AncestorType=Slider}}" Margin="7,0,-7,0"
                                 VerticalAlignment="Center" Background="{TemplateBinding Background}" />
                     </Border>
                 </ControlTemplate>
@@ -194,7 +195,8 @@
                     <Grid Background="Transparent" MinHeight="16">
                         <Border Height="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
                                 VerticalAlignment="Center" Background="{DynamicResource RailBrush}" />
-                        <Track x:Name="PART_Track">
+                        <!-- Overhang by half the thumb so the thumb's centre lines up with the value (0% and 100% at the rail ends). -->
+                        <Track x:Name="PART_Track" Margin="-7,0">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Command="Slider.DecreaseLarge" Style="{StaticResource SliderTrackButton}"
                                               Background="{TemplateBinding Foreground}" />

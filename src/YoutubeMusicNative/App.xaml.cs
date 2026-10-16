@@ -26,6 +26,7 @@ public partial class App : Application
         base.OnStartup(e);
         // Measured: CPU rendering saves ~35-40 MB of Direct3D memory and costs no extra CPU for this mostly static UI.
         System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+        Infrastructure.SliderDrag.Register();
 
         DispatcherUnhandledException += (_, args) =>
         {
